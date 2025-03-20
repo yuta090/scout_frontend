@@ -12,7 +12,10 @@ export const isNightTimeDelivery = (startTime: string) => {
   return hour >= 18 || hour <= 8;
 };
 
-export const getDayDeliveryPrice = (day: keyof DeliveryDays, deliveryDays: DeliveryDays) => {
+export const getDayDeliveryPrice = (
+  day: keyof DeliveryDays,
+  deliveryDays: DeliveryDays
+) => {
   if (!deliveryDays[day].checked) return 0;
 
   const isWeekend = day === 'saturday' || day === 'sunday';
@@ -25,7 +28,10 @@ export const getDayDeliveryPrice = (day: keyof DeliveryDays, deliveryDays: Deliv
   return price;
 };
 
-export const calculateTotalPrice = (deliveryDays: DeliveryDays, additionalQuantity: number) => {
+export const calculateTotalPrice = (
+  deliveryDays: DeliveryDays,
+  additionalQuantity: number
+) => {
   let total = BASE_PRICE;
 
   Object.entries(deliveryDays).forEach(([day, value]) => {
@@ -63,16 +69,20 @@ export const getDeliveryDates = (
     .filter(([_, value]) => value.checked)
     .map(([day, value]) => ({
       day: dayMap[day.toLowerCase()],
-      time: `${value.start.padStart(2, "0")}:00:00`, // Format time to HH:00:00
+      time: `${value.start.padStart(2, '0')}:00:00`, // Format time to HH:00:00
     }));
 
   const result: { date: string; time: string }[] = [];
 
-  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-    const dayInfo = activeDays.find(d => d.day === date.getDay());
+  for (
+    let date = new Date(start);
+    date <= end;
+    date.setDate(date.getDate() + 1)
+  ) {
+    const dayInfo = activeDays.find((d) => d.day === date.getDay());
     if (dayInfo) {
       result.push({
-        date: date.toISOString().split("T")[0], // Format YYYY-MM-DD
+        date: date.toISOString().split('T')[0], // Format YYYY-MM-DD
         time: dayInfo.time,
       });
     }
@@ -80,7 +90,6 @@ export const getDeliveryDates = (
 
   return result;
 };
-
 
 // 期間内の配信可能日数を計算する関数（土日の配信設定を考慮）
 export const calculateDeliveryDaysInPeriod = (
@@ -106,7 +115,7 @@ export const calculateDeliveryDaysInPeriod = (
       'wednesday',
       'thursday',
       'friday',
-      'saturday'
+      'saturday',
     ][day] as keyof DeliveryDays;
 
     // その曜日が配信設定されているかチェック
@@ -127,10 +136,17 @@ export const calculateTotalQuantity = (
 ): number => {
   if (!startDate || !endDate || !deliveryDays) return 0;
 
-  const deliveryDaysCount = calculateDeliveryDaysInPeriod(startDate, endDate, deliveryDays);
+  const deliveryDaysCount = calculateDeliveryDaysInPeriod(
+    startDate,
+    endDate,
+    deliveryDays
+  );
 
   // 基本の送信数を計算（期間内の営業日 × 500通、ただし最大5000通まで）
-  const baseQuantity = Math.min(deliveryDaysCount * DAILY_LIMIT, MAX_TOTAL_QUANTITY);
+  const baseQuantity = Math.min(
+    deliveryDaysCount * DAILY_LIMIT,
+    MAX_TOTAL_QUANTITY
+  );
 
   // 追加送信数を加算
   const totalQuantity = baseQuantity + additionalQuantity;
@@ -147,8 +163,17 @@ export const formatDateRange = (
 ): string => {
   if (!startDate || !endDate || !deliveryDays) return '';
 
-  const deliveryDaysCount = calculateDeliveryDaysInPeriod(startDate, endDate, deliveryDays);
-  const totalQuantity = calculateTotalQuantity(startDate, endDate, deliveryDays, additionalQuantity);
+  const deliveryDaysCount = calculateDeliveryDaysInPeriod(
+    startDate,
+    endDate,
+    deliveryDays
+  );
+  const totalQuantity = calculateTotalQuantity(
+    startDate,
+    endDate,
+    deliveryDays,
+    additionalQuantity
+  );
 
   return `${deliveryDaysCount}日間 (最大${totalQuantity.toLocaleString()}通)`;
 };
@@ -174,10 +199,16 @@ export const validatePeriod = (
     return '開始日は終了日より前の日付を選択してください';
   }
 
-  const deliveryDaysCount = calculateDeliveryDaysInPeriod(startDate, endDate, deliveryDays);
+  const deliveryDaysCount = calculateDeliveryDaysInPeriod(
+    startDate,
+    endDate,
+    deliveryDays
+  );
 
   // 配信日が選択されているかチェック
-  const hasDeliveryDays = Object.values(deliveryDays).some(day => day.checked);
+  const hasDeliveryDays = Object.values(deliveryDays).some(
+    (day) => day.checked
+  );
   if (!hasDeliveryDays) {
     return '配信する曜日を1日以上選択してください';
   }
