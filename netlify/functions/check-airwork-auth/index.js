@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -54,39 +55,6 @@ const generateSuccessResponse = (message, details = {}) => {
   };
 };
 
-// システムにインストールされているChromeを見つける関数
-const findChromePath = () => {
-  // OS別のChrome実行ファイルの可能性のあるパス
-  const paths = {
-    darwin: [
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium'
-    ],
-    linux: [
-      '/usr/bin/google-chrome',
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser'
-    ],
-    win32: [
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
-    ]
-  };
-
-  const platform = process.platform;
-  const possiblePaths = paths[platform] || [];
-
-  for (const browserPath of possiblePaths) {
-    if (fs.existsSync(browserPath)) {
-      return browserPath;
-    }
-  }
-
-  return null;
-};
-
 // 認証処理を行う関数
 exports.handler = async (event, context) => {
   // OPTIONSメソッドへの対応
@@ -129,53 +97,43 @@ exports.handler = async (event, context) => {
   let browser = null;
   try {
     console.log('🌐 Puppeteerでのブラウザを起動中...');
+    console.log('🔍 環境診断:', { nodeVersion: process.version, platform: process.platform, arch: process.arch });
     
-    // 環境変数をログに記録
-    console.log('🔍 環境診断:', {
-      nodeVersion: process.version,
-      platform: process.platform,
-      arch: process.arch
-    });
-    
-    // システムにインストールされているChromeを見つける
-    const chromePath = findChromePath();
-    if (chromePath) {
-      console.log(`✅ Chromeが見つかりました: ${chromePath}`);
+    // Netlify Functions環境用の設定
+    if (process.env.NETLIFY) {
+      // Netlify環境ではビルドインのChromiumを使用
+      console.log('🌐 Netlify環境を検出: @sparticuz/chromiumを使用します');
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+        ignoreHTTPSErrors: true,
+      });
     } else {
-      console.log('⚠️ システム上にChromeが見つかりませんでした。デフォルトのパスを試します。');
+      // ローカル環境ではインストール済みのChromeを使用
+      const chromePath = process.platform === 'darwin' 
+        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : process.platform === 'win32'
+          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+          : '/usr/bin/google-chrome';
+      
+      console.log('✅ Chromeが見つかりました:', chromePath);
+      console.log('🌐 使用するブラウザのパス:', chromePath);
+      
+      browser = await puppeteer.launch({
+        executablePath: chromePath,
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--window-size=1280,720',
+        ]
+      });
     }
-    
-    // MacOSでのデフォルトのChromeパス
-    const defaultChromePath = process.platform === 'darwin'
-      ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-      : process.platform === 'win32'
-        ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-        : '/usr/bin/google-chrome';
-    
-    // 使用するブラウザのパス
-    const browserPath = chromePath || defaultChromePath;
-    console.log(`🌐 使用するブラウザのパス: ${browserPath}`);
-    
-    // 実際のChromeブラウザを模倣した詳細な設定
-    const launchOptions = {
-      executablePath: browserPath,
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-web-security'
-      ],
-      defaultViewport: {
-        width: 1920,
-        height: 1080
-      },
-      ignoreHTTPSErrors: true,
-      timeout: 60000
-    };
-    
-    browser = await puppeteer.launch(launchOptions);
 
     console.log('🌐 ブラウザが起動しました');
     const page = await browser.newPage();
