@@ -1,6 +1,44 @@
-# Airwork 認証システム Netlify Functions 実装
+<!-- 最終更新: 2023-03-23 -->
+
+# HRAim Frontend
 
 このプロジェクトは、[Puppeteer](https://pptr.dev/)と[@sparticuz/chromium](https://github.com/Sparticuz/chromium)を使用して、Netlify Functionsでヘッドレスブラウザによる認証機能を実装したものです。
+
+## 概要
+
+- `check-airwork-auth`: Airwork認証のチェック機能
+- `check-engage-auth`: Engage認証のチェック機能
+- `engage-auth-simple`: 簡素化したEngage認証機能
+
+## 認証モード
+
+- フルブラウザモード: Puppeteerを使用してブラウザを操作
+- 簡易認証モード: ハードコードされた認証情報を使用した簡易チェック
+
+## 構成
+
+このプロジェクトは以下のようなディレクトリ構成になっています。
+
+```
+netlify/
+  functions/
+    check-airwork-auth/
+      index.js
+      package.json
+    check-engage-auth/
+      index.js
+      package.json
+    engage-auth-simple/
+      index.js
+      package.json
+```
+
+## 使用技術
+
+- Node.js: サーバーサイドJavaScript実行環境
+- Netlify Functions: サーバーレス関数ホスティング
+- Chrome AWS Lambda: AWS Lambda/Netlify向けChromiumパッケージ
+- Puppeteer: ヘッドレスブラウザ操作ライブラリ
 
 ## 機能概要
 
