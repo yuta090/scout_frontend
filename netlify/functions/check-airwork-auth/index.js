@@ -99,41 +99,15 @@ exports.handler = async (event, context) => {
     console.log('🌐 Puppeteerでのブラウザを起動中...');
     console.log('🔍 環境診断:', { nodeVersion: process.version, platform: process.platform, arch: process.arch });
     
-    // Netlify Functions環境用の設定
-    if (process.env.NETLIFY) {
-      // Netlify環境ではビルドインのChromiumを使用
-      console.log('🌐 Netlify環境を検出: @sparticuz/chromiumを使用します');
-      browser = await puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
-        ignoreHTTPSErrors: true,
-      });
-    } else {
-      // ローカル環境ではインストール済みのChromeを使用
-      const chromePath = process.platform === 'darwin' 
-        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-        : process.platform === 'win32'
-          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-          : '/usr/bin/google-chrome';
-      
-      console.log('✅ Chromeが見つかりました:', chromePath);
-      console.log('🌐 使用するブラウザのパス:', chromePath);
-      
-      browser = await puppeteer.launch({
-        executablePath: chromePath,
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1280,720',
-        ]
-      });
-    }
+    // Netlify Functions環境用の設定（常にchromiumを使用）
+    console.log('🌐 Serverless環境: @sparticuz/chromiumを使用します');
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
+    });
 
     console.log('🌐 ブラウザが起動しました');
     const page = await browser.newPage();
