@@ -1,28 +1,19 @@
 # Airwork認証チェック関数
 
-このNetlify Functionは、browserless.ioを使用してPuppeteerでAirworkのログイン認証をテストするための関数です。
+このNetlify Functionは、chrome-aws-lambdaを使用してPuppeteerでAirworkのログイン認証をテストするための関数です。
 
 ## 仕組み
 
-1. browserless.ioのリモートブラウザインスタンスに接続
+1. Netlify Functionsの環境でchrome-aws-lambdaを使って軽量なChromiumを実行
 2. Puppeteerを使用してAirworkのログインページにアクセス
 3. ユーザー名とパスワードを入力してログイン
 4. 指定されたXPathが存在するか確認して認証の成功を判定
 
-## セットアップ
+## 技術的な詳細
 
-### 必要な環境変数
-
-- `BROWSERLESS_TOKEN`: browserless.ioのAPIトークン（[browserless.io](https://www.browserless.io/)でアカウント作成後に取得）
-
-### 環境変数の設定方法
-
-Netlify CLIを使用する場合:
-```
-npx netlify-cli env:set BROWSERLESS_TOKEN "your-token-here"
-```
-
-または、Netlify Dashboard → Site settings → Environment variables から設定
+- `chrome-aws-lambda`: AWS Lambda環境向けに最適化されたChromiumパッケージを使用
+- `puppeteer-core`: ブラウザ自動化のコア機能のみを提供する軽量版Puppeteer
+- 環境検出: Netlify環境とローカル開発環境を自動的に検出して適切なブラウザを使用
 
 ## API仕様
 
@@ -75,5 +66,5 @@ curl -X POST -H "Content-Type: application/json" -d '{"username":"your-username"
 
 ## 参考資料
 
-- [browserless.ioドキュメント](https://www.browserless.io/docs/puppeteer)
-- [Puppeteer on Netlify Functions](https://www.browserless.io/blog/puppeteer-netlify) 
+- [chrome-aws-lambda](https://github.com/alixaxel/chrome-aws-lambda)
+- [Netlify Functionsでheadless chromiumを動かす](https://mizchi.dev/202006161500-netlify-lambda-chromium) 

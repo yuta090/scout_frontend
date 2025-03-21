@@ -1,7 +1,7 @@
 {
   "name": "check-airwork-auth",
   "version": "1.0.0",
-  "description": "AirworkのログインAPIをPuppeteerでテストする関数",
+  "description": "AirworkのログインをPuppeteerでテストする関数",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -10,9 +10,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@sparticuz/chromium": "^113.0.1",
-    "chrome-aws-lambda": "^10.1.0",
-    "dotenv": "^16.4.7",
-    "puppeteer-core": "^10.4.0"
+    "chrome-aws-lambda": "^8.0.2",
+    "dotenv": "^16.4.5",
+    "puppeteer-core": "^8.0.0"
   }
 }

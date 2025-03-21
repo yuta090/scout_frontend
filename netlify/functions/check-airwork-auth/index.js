@@ -1,6 +1,6 @@
 // 簡易版関数 - 更新日: 2025-03-21
 const puppeteer = require('puppeteer-core');
-require('dotenv').config();
+const chromium = require('chrome-aws-lambda');
 
 // CORS対応のためのヘッダーを設定
 const headers = {
@@ -44,17 +44,39 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
   };
 };
 
+// ブラウザを取得する関数
+const getBrowser = async () => {
+  const executablePath = await chromium.executablePath;
+  
+  // デバッグ目的でパスを出力
+  console.log('Chromium実行ファイルパス:', executablePath);
+  
+  // 本番環境とローカル環境で分岐
+  if (process.env.NETLIFY) {
+    return await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
+    });
+  } else {
+    // ローカル環境ではインストール済みのChromeを使用
+    return await puppeteer.launch({
+      args: ['--no-sandbox'],
+      headless: true,
+      executablePath: process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    });
+  }
+};
+
 // Airworkの認証をチェックする関数
 const checkAuthentication = async (username, password, xpathToCheck) => {
   let browser;
   try {
-    // browserlessインスタンスに接続
-    // 注意: BROWSERLESS_TOKEN環境変数が必要です
-    browser = await puppeteer.connect({
-      browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`,
-    });
-    
-    console.log('🌐 ブラウザに接続しました');
+    // ブラウザを取得
+    browser = await getBrowser();
+    console.log('🌐 ブラウザを起動しました');
     
     // 新しいページを開く
     const page = await browser.newPage();
@@ -107,7 +129,7 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
       console.log('✅ 認証に成功しました！');
       
       // スクリーンショットを取得（デバッグ用）
-      const screenshotBuffer = await page.screenshot({ encoding: 'binary' });
+      const screenshotBuffer = await page.screenshot();
       
       return {
         success: true,
@@ -118,7 +140,7 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
       console.error('❌ 成功確認のXPathが見つかりませんでした:', xpathError.message);
       
       // スクリーンショットを取得（デバッグ用）
-      const screenshotBuffer = await page.screenshot({ encoding: 'binary' });
+      const screenshotBuffer = await page.screenshot();
       
       return {
         success: false,
@@ -171,11 +193,6 @@ exports.handler = async (event, context) => {
     
     const { username, password } = requestBody;
     const xpathToCheck = requestBody.xpath || "//a[contains(@class, 'logout')]";
-    
-    // 環境変数のチェック
-    if (!process.env.BROWSERLESS_TOKEN) {
-      return generateErrorResponse('BROWSERLESS_TOKENが設定されていません', 500);
-    }
     
     // 認証チェックを実行
     console.log(`🔒 ${username}の認証を開始します...`);
