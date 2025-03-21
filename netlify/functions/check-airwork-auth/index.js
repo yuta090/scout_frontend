@@ -50,11 +50,14 @@ const getBrowser = async () => {
     // Netlify環境向けに@sparticuz/chromiumを設定
     await chromium.font();
     
+    // executablePathを文字列として取得してから使用
+    const execPath = await chromium.executablePath();
+    
     return puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: true,
+      executablePath: execPath,
+      headless: chromium.headless,
       ignoreHTTPSErrors: true
     });
   } catch (error) {
