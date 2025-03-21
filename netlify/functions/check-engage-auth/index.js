@@ -181,51 +181,17 @@ exports.handler = async (event, context) => {
     
     const { username, password } = requestBody;
     
-    // ローカルテスト環境または特定のフラグが有効な場合は簡易認証を使用
-    if (isLocal || requestBody.useSimpleAuth) {
-      console.log('🧪 ローカルテストまたは簡易認証モードを使用します');
-      const authResult = await simpleAuthCheck(username, password);
-      
-      if (authResult.success) {
-        return generateSuccessResponse('簡易認証に成功しました', {
-          envInfo: authResult.envInfo
-        });
-      } else {
-        return generateErrorResponse(authResult.message, 401, {
-          envInfo: authResult.envInfo
-        });
-      }
-    }
+    // 常に簡易認証モードを使用する
+    console.log('🧪 簡易認証モードを使用します');
+    const authResult = await simpleAuthCheck(username, password);
     
-    // ブラウザを起動して認証をチェック
-    try {
-      const browser = await getBrowser();
-      console.log('✅ ブラウザセッションを開始します');
-      
-      const page = await browser.newPage();
-      console.log('📄 新しいページを開きました');
-      
-      // 認証成功とみなす
-      console.log('✅ ブラウザでの認証に成功しました');
-      
-      // スクリーンショットを取得
-      const screenshotBuffer = await page.screenshot();
-      
-      // ページを閉じる
-      await page.close();
-      
+    if (authResult.success) {
       return generateSuccessResponse('認証に成功しました', {
-        screenshot: screenshotBuffer.toString('base64'),
-        envInfo: getEnvInfo()
+        envInfo: authResult.envInfo
       });
-      
-    } catch (browserError) {
-      console.error('Error details:', browserError);
-      console.error('Error stack:', browserError.stack);
-      return generateErrorResponse('ブラウザでの認証に失敗しました: ' + browserError.message, 500, {
-        error: browserError.message,
-        stack: browserError.stack,
-        envInfo: getEnvInfo()
+    } else {
+      return generateErrorResponse(authResult.message, 401, {
+        envInfo: authResult.envInfo
       });
     }
     
