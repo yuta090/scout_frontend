@@ -1,11 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import puppeteer from "https://deno.land/x/puppeteer@16.2.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+
+interface AuthResponse {
+  success: boolean;
+  message: string;
+  details: {
+    status: 'success' | 'error' | 'network_error' | 'invalid_credentials' | 'account_locked' | 'maintenance';
+    code: string;
+    timestamp: string;
+    attempts?: number;
+    nextAttemptAt?: string;
+    maintenanceEndAt?: string;
+  };
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -19,11 +31,18 @@ serve(async (req) => {
 
     // Validate input
     if (!username || !password) {
+      const response: AuthResponse = {
+        success: false,
+        message: "ログイン情報が不足しています",
+        details: {
+          status: 'error',
+          code: 'MISSING_CREDENTIALS',
+          timestamp: new Date().toISOString()
+        }
+      };
+
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          message: "ログイン情報が不足しています" 
-        }),
+        JSON.stringify(response),
         { 
           headers: {
             ...corsHeaders,
@@ -34,154 +53,122 @@ serve(async (req) => {
       );
     }
 
-    // Launch browser with specific options for Edge Functions environment
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process'
-      ]
-    });
-
     try {
-      const page = await browser.newPage();
-      
-      // Set a reasonable timeout and viewport
-      page.setDefaultTimeout(30000);
-      await page.setViewport({ width: 1280, height: 800 });
-      
-      // 変更: 新しいURLに移動
-      try {
-        await page.goto('https://ats.rct.airwork.net/interaction', {
-          waitUntil: 'networkidle2',
-          timeout: 30000
-        });
-      } catch (error) {
-        throw new Error('ログインページへのアクセスに失敗しました');
-      }
+      // Make a direct HTTP request to AirWork login API
+      const response = await fetch('https://ats.rct.airwork.net/airplf/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+        },
+        body: JSON.stringify({
+          account: username,
+          password: password,
+          remember: false
+        })
+      });
 
-      // 変更: ログインボタンをクリック（XPath指定）
-      try {
-        await page.waitForXPath('//*[@id="__next"]/div/main/div[2]/div[2]/a', { timeout: 10000 });
-        const [loginButton] = await page.$x('//*[@id="__next"]/div/main/div[2]/div[2]/a');
-        
-        if (!loginButton) {
-          throw new Error('ログインボタンが見つかりませんでした');
+      const data = await response.json();
+
+      if (!response.ok) {
+        const authResponse: AuthResponse = {
+          success: false,
+          message: data.message || "認証に失敗しました",
+          details: {
+            status: 'error',
+            code: 'AUTH_FAILED',
+            timestamp: new Date().toISOString()
+          }
+        };
+
+        // エラーの種類に応じて詳細情報を設定
+        if (response.status === 401) {
+          authResponse.details.status = 'invalid_credentials';
+          authResponse.details.code = 'INVALID_CREDENTIALS';
+        } else if (response.status === 429) {
+          authResponse.details.status = 'error';
+          authResponse.details.code = 'RATE_LIMIT';
+          authResponse.details.attempts = data.attempts;
+          authResponse.details.nextAttemptAt = data.nextAttemptAt;
+        } else if (response.status === 423) {
+          authResponse.details.status = 'account_locked';
+          authResponse.details.code = 'ACCOUNT_LOCKED';
+          authResponse.details.nextAttemptAt = data.nextAttemptAt;
+        } else if (response.status === 503) {
+          authResponse.details.status = 'maintenance';
+          authResponse.details.code = 'MAINTENANCE';
+          authResponse.details.maintenanceEndAt = data.maintenanceEndAt;
         }
-        
-        await loginButton.click();
-        // ページ遷移を待つ
-        await page.waitForNavigation({ 
-          waitUntil: 'networkidle2',
-          timeout: 30000 
-        });
-      } catch (error) {
-        throw new Error('ログインボタンのクリックに失敗しました: ' + error.message);
-      }
 
-      // 以降の処理（ログインフォームへの入力など）は同じ
-      try {
-        await page.waitForSelector('#account', { timeout: 10000 });
-        await page.waitForSelector('#password', { timeout: 10000 });
-        await page.waitForSelector('input[type="submit"]', { timeout: 10000 });
-      } catch (error) {
-        throw new Error('ログインフォームの読み込みに失敗しました');
-      }
-
-      // Fill in credentials with error handling
-      try {
-        await page.type('#account', username);
-        await page.type('#password', password);
-      } catch (error) {
-        throw new Error('認証情報の入力に失敗しました');
-      }
-      
-      // Click login and wait for navigation with error handling
-      try {
-        await Promise.all([
-          page.click('input[type="submit"]'),
-          page.waitForNavigation({ 
-            waitUntil: 'networkidle2',
-            timeout: 30000 
-          })
-        ]);
-      } catch (error) {
-        throw new Error('ログイン処理中にタイムアウトが発生しました');
-      }
-
-      // Check for login errors
-      const errorElement = await page.$('.error-message');
-      if (errorElement) {
-        const errorText = await page.evaluate(el => el.textContent, errorElement);
         return new Response(
-          JSON.stringify({ 
-            success: false, 
-            message: errorText || "ログインに失敗しました" 
-          }),
+          JSON.stringify(authResponse),
           { 
             headers: {
               ...corsHeaders,
               'Content-Type': 'application/json'
             },
-            status: 401
+            status: response.status
           }
         );
       }
 
-      // Check for successful login
-      try {
-        const header = await page.$('#air-common-header');
-        if (header) {
-          return new Response(
-            JSON.stringify({ 
-              success: true, 
-              message: "認証に成功しました" 
-            }),
-            { 
-              headers: {
-                ...corsHeaders,
-                'Content-Type': 'application/json'
-              },
-              status: 200
-            }
-          );
+      const authResponse: AuthResponse = {
+        success: true,
+        message: "認証に成功しました",
+        details: {
+          status: 'success',
+          code: 'AUTH_SUCCESS',
+          timestamp: new Date().toISOString()
         }
-      } catch (error) {
-        throw new Error('認証状態の確認に失敗しました');
-      }
+      };
 
-      // If we get here, authentication failed
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          message: "認証に失敗しました" 
-        }),
+        JSON.stringify(authResponse),
         { 
           headers: {
             ...corsHeaders,
             'Content-Type': 'application/json'
           },
-          status: 401
+          status: 200
         }
       );
 
-    } finally {
-      // ブラウザを必ず閉じる
-      await browser.close();
+    } catch (error) {
+      console.error('Error making auth request:', error);
+      const response: AuthResponse = {
+        success: false,
+        message: '認証サーバーへの接続に失敗しました',
+        details: {
+          status: 'network_error',
+          code: 'NETWORK_ERROR',
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      throw response;
     }
+
   } catch (error) {
     console.error("Error in check-airwork-auth function:", error);
     
+    let response: AuthResponse;
+    if (error && typeof error === 'object' && 'details' in error) {
+      response = error as AuthResponse;
+    } else {
+      response = {
+        success: false,
+        message: error instanceof Error ? error.message : "認証チェック中にエラーが発生しました",
+        details: {
+          status: 'error',
+          code: 'UNKNOWN_ERROR',
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        message: error instanceof Error ? error.message : "認証チェック中にエラーが発生しました"
-      }),
+      JSON.stringify(response),
       { 
         headers: {
           ...corsHeaders,
