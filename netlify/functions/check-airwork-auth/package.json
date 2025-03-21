@@ -1,9 +1,17 @@
 {
   "name": "check-airwork-auth",
   "version": "1.0.0",
-  "description": "Airworkの認証をPuppeteerで確認するNetlify Function",
+  "description": "AirworkのログインAPIをPuppeteerでテストする関数",
   "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "puppeteer-core": "^19.7.5"
+    "@sparticuz/chromium": "^113.0.1",
+    "chrome-aws-lambda": "^10.1.0",
+    "puppeteer-core": "^10.4.0"
   }
 }
