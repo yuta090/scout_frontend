@@ -1,10 +1,12 @@
-// Engage認証チェック関数 - 更新日: 2025-03-22
-const chromium = require('chrome-aws-lambda');
-const puppeteer = chromium.puppeteer;
-const os = require('os');
+// Engage認証チェック関数 - 更新日: 2025-03-22 (完全な簡易認証版)
 
-// 環境変数をチェック
-const isLocal = !process.env.NETLIFY;
+// CORS対応のためのヘッダーを設定
+const headers = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Content-Type': 'application/json'
+};
 
 // 環境変数を出力（デバッグ用）
 console.log('Environment variables:', {
@@ -14,32 +16,6 @@ console.log('Environment variables:', {
   functionPath: process.env.LAMBDA_TASK_ROOT,
   nodeModules: process.env.NODE_PATH
 });
-
-// 現在のディレクトリの内容を出力
-const fs = require('fs');
-const path = require('path');
-try {
-  console.log('Current directory:', process.cwd());
-  const files = fs.readdirSync(process.cwd());
-  console.log('Directory contents:', files);
-  
-  // node_modulesの確認
-  const nodeModulesPath = path.join(process.cwd(), 'node_modules');
-  if (fs.existsSync(nodeModulesPath)) {
-    const nodeModules = fs.readdirSync(nodeModulesPath);
-    console.log('node_modules contents:', nodeModules);
-  }
-} catch (error) {
-  console.error('Error checking directory:', error);
-}
-
-// CORS対応のためのヘッダーを設定
-const headers = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Content-Type': 'application/json'
-};
 
 // OPTIONSリクエストへの対応
 const handleOptions = () => {
@@ -78,12 +54,11 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
 // 環境情報を取得
 const getEnvInfo = () => {
   return {
-    platform: os.platform(),
+    platform: process.platform,
     isNetlify: process.env.NETLIFY === 'true',
     cwd: process.cwd(),
     nodeEnv: process.env.NODE_ENV,
-    nodeVersion: process.version,
-    moduleCache: module.paths
+    nodeVersion: process.version
   };
 };
 
@@ -115,33 +90,6 @@ const simpleAuthCheck = async (username, password) => {
       message: '認証失敗：ユーザー名またはパスワードが正しくありません',
       envInfo: getEnvInfo()
     };
-  }
-};
-
-// ブラウザインスタンスをキャッシュ
-let _browser = null;
-
-// ブラウザを取得する関数
-const getBrowser = async () => {
-  if (_browser) {
-    return _browser;
-  }
-  
-  try {
-    // Netlify環境向けに最適化された起動設定
-    console.log('🌐 ブラウザを起動しています...');
-    _browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath,
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true
-    });
-    console.log('✅ ブラウザの起動に成功しました');
-    return _browser;
-  } catch (error) {
-    console.error('❌ ブラウザ起動エラー:', error);
-    throw error;
   }
 };
 
@@ -181,7 +129,7 @@ exports.handler = async (event, context) => {
     
     const { username, password } = requestBody;
     
-    // 常に簡易認証モードを使用する
+    // 簡易認証モードを使用
     console.log('🧪 簡易認証モードを使用します');
     const authResult = await simpleAuthCheck(username, password);
     
