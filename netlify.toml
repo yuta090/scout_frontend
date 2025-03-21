@@ -1,6 +1,6 @@
 [build]
-  command = "npm run build"
-  publish = "dist"
+  command = "echo 'Functions only deployment'"
+  publish = "public"
   functions = "netlify/functions"
 
 [functions]
