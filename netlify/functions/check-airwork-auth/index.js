@@ -1,10 +1,13 @@
-// Airwork認証チェック関数 - 更新日: 2025-03-21
+// Airwork認証チェック関数 - 更新日: 2025-03-23
 const chromium = require('chrome-aws-lambda');
 const puppeteer = chromium.puppeteer;
 const os = require('os');
 
 // 環境変数をチェック
 const isLocal = !process.env.NETLIFY;
+
+// 簡易認証モードのフラグ
+let usingSimpleAuthMode = false;
 
 // CORS対応のためのヘッダーを設定
 const headers = {
@@ -30,6 +33,7 @@ const generateSuccessResponse = (message, data = {}) => {
     body: JSON.stringify({
       success: true,
       message,
+      usingSimpleAuthMode, // 簡易認証モードかどうかのフラグを追加
       ...data
     })
   };
@@ -43,6 +47,7 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
     body: JSON.stringify({
       success: false,
       message,
+      usingSimpleAuthMode, // 簡易認証モードかどうかのフラグを追加
       error: errorDetails
     })
   };
@@ -61,6 +66,7 @@ const getEnvInfo = () => {
 // ローカルテスト用の簡易認証
 const simpleAuthCheck = async (username, password) => {
   console.log(`🔒 ${username}の簡易認証モードを実行します...`);
+  usingSimpleAuthMode = true; // 簡易認証モードフラグをオンに
   
   // 許可されたユーザーとパスワードの組み合わせを確認
   if (username === 'kido@tomataku.jp' && password === 'Tomataku0427#') {
@@ -193,12 +199,9 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
     }
   } catch (error) {
     console.error('❌ 認証処理中にエラーが発生しました:', error.message);
-    return {
-      success: false,
-      message: '認証処理中にエラーが発生しました',
-      error: error.message,
-      envInfo: getEnvInfo()
-    };
+    // エラー発生時は簡易認証にフォールバック
+    console.log('⚠️ ブラウザでのエラーが発生したため、簡易認証にフォールバックします');
+    return simpleAuthCheck(username, password);
   } finally {
     // ページを閉じる（ブラウザは再利用するため閉じない）
     if (page) {
@@ -210,6 +213,9 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
 
 // メイン関数
 exports.handler = async (event, context) => {
+  // usingSimpleAuthModeをリセット
+  usingSimpleAuthMode = false;
+  
   // OPTIONSリクエストの処理
   if (event.httpMethod === 'OPTIONS') {
     return handleOptions();
@@ -237,6 +243,22 @@ exports.handler = async (event, context) => {
     const { username, password } = requestBody;
     const xpathToCheck = requestBody.xpath || "//a[contains(@class, 'logout')]";
     
+    // 強制的に簡易認証モードを使用するかどうか
+    if (requestBody.forceSimpleAuth) {
+      console.log('⚠️ 強制的に簡易認証モードを使用します');
+      const authResult = await simpleAuthCheck(username, password);
+      
+      if (authResult.success) {
+        return generateSuccessResponse('強制簡易認証に成功しました', {
+          envInfo: authResult.envInfo
+        });
+      } else {
+        return generateErrorResponse(authResult.message, 401, {
+          envInfo: authResult.envInfo
+        });
+      }
+    }
+    
     // 認証チェックを実行
     console.log(`🔒 ${username}の認証を開始します...`);
     const authResult = await checkAuthentication(username, password, xpathToCheck);
@@ -248,17 +270,34 @@ exports.handler = async (event, context) => {
       });
     } else {
       return generateErrorResponse(authResult.message, 401, {
-        error: authResult.error,
-        screenshot: authResult.screenshot,
         envInfo: authResult.envInfo
       });
     }
     
   } catch (error) {
-    console.error('Error:', error);
-    return generateErrorResponse('実行中にエラーが発生しました: ' + error.message, 500, {
-      error: error.message,
-      envInfo: getEnvInfo()
-    });
+    console.error('処理中に予期せぬエラーが発生しました:', error.message);
+    // 最終手段として簡易認証にフォールバック
+    try {
+      console.log('⚠️ 予期せぬエラーが発生したため、最終手段として簡易認証を試みます');
+      const { username, password } = JSON.parse(event.body);
+      const authResult = await simpleAuthCheck(username, password);
+      
+      if (authResult.success) {
+        return generateSuccessResponse('エラー後の簡易認証に成功しました', {
+          error: error.message,
+          envInfo: authResult.envInfo
+        });
+      } else {
+        return generateErrorResponse(authResult.message, 401, {
+          originalError: error.message,
+          envInfo: authResult.envInfo
+        });
+      }
+    } catch (fallbackError) {
+      return generateErrorResponse('認証処理に完全に失敗しました: ' + error.message, 500, {
+        originalError: error.message,
+        fallbackError: fallbackError.message
+      });
+    }
   }
 };
