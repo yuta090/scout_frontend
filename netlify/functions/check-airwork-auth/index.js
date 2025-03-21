@@ -1,6 +1,6 @@
 // 簡易版関数 - 更新日: 2025-03-21
 const puppeteer = require('puppeteer-core');
-const chromium = require('chrome-aws-lambda');
+const chromium = require('@sparticuz/chromium');
 
 // CORS対応のためのヘッダーを設定
 const headers = {
@@ -46,28 +46,18 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
 
 // ブラウザを取得する関数
 const getBrowser = async () => {
-  const executablePath = await chromium.executablePath;
+  console.log(`Chromium実行ファイルパス: ${await chromium.executablePath}`);
   
-  // デバッグ目的でパスを出力
-  console.log('Chromium実行ファイルパス:', executablePath);
-  
-  // 本番環境とローカル環境で分岐
-  if (process.env.NETLIFY) {
-    return await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true,
-    });
-  } else {
-    // ローカル環境ではインストール済みのChromeを使用
-    return await puppeteer.launch({
-      args: ['--no-sandbox'],
-      headless: true,
-      executablePath: process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    });
-  }
+  return puppeteer.launch({
+    args: chromium.args,
+    executablePath: process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath,
+    headless: chromium.headless,
+    defaultViewport: {
+      width: 1280,
+      height: 800
+    },
+    ignoreHTTPSErrors: true
+  });
 };
 
 // Airworkの認証をチェックする関数
