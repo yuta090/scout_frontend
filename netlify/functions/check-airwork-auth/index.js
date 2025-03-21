@@ -46,18 +46,21 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
 
 // ブラウザを取得する関数
 const getBrowser = async () => {
-  console.log(`Chromium実行ファイルパス: ${await chromium.executablePath}`);
-  
-  return puppeteer.launch({
-    args: chromium.args,
-    executablePath: process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath,
-    headless: chromium.headless,
-    defaultViewport: {
-      width: 1280,
-      height: 800
-    },
-    ignoreHTTPSErrors: true
-  });
+  try {
+    // Netlify環境向けに@sparticuz/chromiumを設定
+    await chromium.font();
+    
+    return puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+      ignoreHTTPSErrors: true
+    });
+  } catch (error) {
+    console.error('ブラウザ起動エラー:', error);
+    throw error;
+  }
 };
 
 // Airworkの認証をチェックする関数
