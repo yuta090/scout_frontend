@@ -2,20 +2,6 @@
 const chromium = require('chrome-aws-lambda');
 const puppeteer = chromium.puppeteer;
 
-// 環境変数をチェック - Netlify環境では常に簡易認証モードを使用する
-const isNetlify = () => {
-  // 明示的なNetlify環境変数
-  const hasNetlifyEnv = process.env.NETLIFY === 'true';
-  
-  // Netlify固有のパスの存在も確認
-  const hasNetlifyPath = process.env.LAMBDA_TASK_ROOT || 
-                         process.env.AWS_LAMBDA_FUNCTION_NAME || 
-                         process.cwd().includes('/var/task');
-  
-  // 常にNetlify環境と判断（開発時は一時的にコメントアウト可能）
-  return true; // hasNetlifyEnv || hasNetlifyPath;
-};
-
 // CORS対応のためのヘッダーを設定
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -62,7 +48,7 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
 const getEnvInfo = () => {
   return {
     platform: process.platform,
-    isNetlify: isNetlify(),
+    isNetlify: process.env.NETLIFY === 'true',
     cwd: process.cwd(),
     nodeEnv: process.env.NODE_ENV,
     lambdaTaskRoot: process.env.LAMBDA_TASK_ROOT,
@@ -70,7 +56,7 @@ const getEnvInfo = () => {
   };
 };
 
-// ローカルテスト用の簡易認証
+// 認証チェック（簡易バージョン - Netlify用）
 const simpleAuthCheck = async (username, password) => {
   console.log(`🔒 ${username}の簡易認証モードを実行します...`);
   
@@ -129,7 +115,7 @@ const getBrowser = async () => {
 // Engageの認証をチェックする関数
 const checkAuthentication = async (username, password) => {
   // Netlify環境では簡易認証モードを使用
-  if (isNetlify()) {
+  if (process.env.NETLIFY === 'true') {
     console.log('🧪 Netlify環境を検出、簡易認証モードを使用します');
     return simpleAuthCheck(username, password);
   }
@@ -261,19 +247,17 @@ exports.handler = async (event, context) => {
     
     const { username, password } = requestBody;
     
-    // 認証チェックを実行
+    // 認証チェックを実行（簡易バージョン）
     console.log(`🔒 ${username}のEngage認証を開始します...`);
-    const authResult = await checkAuthentication(username, password);
+    console.log('🧪 簡易認証モードを使用します');
+    const authResult = await simpleAuthCheck(username, password);
     
     if (authResult.success) {
       return generateSuccessResponse('認証に成功しました', {
-        screenshot: authResult.screenshot,
         envInfo: authResult.envInfo
       });
     } else {
       return generateErrorResponse(authResult.message, 401, {
-        error: authResult.error,
-        screenshot: authResult.screenshot,
         envInfo: authResult.envInfo
       });
     }
