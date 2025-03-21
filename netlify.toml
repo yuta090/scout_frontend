@@ -13,13 +13,5 @@
   status = 200
 
 [dev]
-  command = "npm run dev"
-  targetPort = 5173
   port = 8888
-  publish = "dist"
   autoLaunch = true
-
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200

@@ -1,0 +1,9 @@
+{
+  "name": "check-airwork-auth",
+  "version": "1.0.0",
+  "description": "Airworkの認証をPuppeteerで確認するNetlify Function",
+  "main": "index.js",
+  "dependencies": {
+    "puppeteer-core": "^19.7.5"
+  }
+}
