@@ -1,8 +1,7 @@
 [build]
-  command = "rm -rf netlify/functions/check-engage-auth/node_modules && npm run build"
+  command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF netlify/functions/check-engage-auth/"
 
 [build.environment]
   NETLIFY_CLEAR_CACHE = "true"
