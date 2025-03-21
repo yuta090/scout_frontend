@@ -1,6 +1,33 @@
 // Engage認証チェック関数 - 更新日: 2025-03-22
 // ブラウザ起動やPuppeteer依存なし
 
+// 環境変数を出力（デバッグ用）
+console.log('Environment variables:', {
+  netlify: process.env.NETLIFY,
+  nodeEnv: process.env.NODE_ENV,
+  functionName: process.env.FUNCTION_NAME,
+  functionPath: process.env.LAMBDA_TASK_ROOT,
+  nodeModules: process.env.NODE_PATH
+});
+
+// 現在のディレクトリの内容を出力
+const fs = require('fs');
+const path = require('path');
+try {
+  console.log('Current directory:', process.cwd());
+  const files = fs.readdirSync(process.cwd());
+  console.log('Directory contents:', files);
+  
+  // node_modulesの確認
+  const nodeModulesPath = path.join(process.cwd(), 'node_modules');
+  if (fs.existsSync(nodeModulesPath)) {
+    const nodeModules = fs.readdirSync(nodeModulesPath);
+    console.log('node_modules contents:', nodeModules);
+  }
+} catch (error) {
+  console.error('Error checking directory:', error);
+}
+
 // CORS対応のためのヘッダーを設定
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -49,7 +76,9 @@ const getEnvInfo = () => {
     platform: process.platform,
     isNetlify: process.env.NETLIFY === 'true',
     cwd: process.cwd(),
-    nodeEnv: process.env.NODE_ENV
+    nodeEnv: process.env.NODE_ENV,
+    nodeVersion: process.version,
+    moduleCache: module.paths
   };
 };
 
@@ -86,6 +115,12 @@ const simpleAuthCheck = async (username, password) => {
 
 // メイン関数
 exports.handler = async (event, context) => {
+  console.log('Function called with event:', {
+    method: event.httpMethod,
+    path: event.path,
+    headers: event.headers
+  });
+  
   // OPTIONSリクエストの処理
   if (event.httpMethod === 'OPTIONS') {
     return handleOptions();
@@ -101,7 +136,9 @@ exports.handler = async (event, context) => {
     let requestBody;
     try {
       requestBody = JSON.parse(event.body || '{}');
+      console.log('Request body parsed:', requestBody);
     } catch (error) {
+      console.error('Error parsing request body:', error);
       return generateErrorResponse('リクエストボディの解析に失敗しました', 400);
     }
     
@@ -127,9 +164,11 @@ exports.handler = async (event, context) => {
     }
     
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error details:', error);
+    console.error('Error stack:', error.stack);
     return generateErrorResponse('実行中にエラーが発生しました: ' + error.message, 500, {
       error: error.message,
+      stack: error.stack,
       envInfo: getEnvInfo()
     });
   }
