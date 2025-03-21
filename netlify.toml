@@ -1,12 +1,12 @@
 [build]
-  command = "rm -rf netlify/functions/check-engage-auth/node_modules && cd netlify/functions/check-engage-auth && npm install && cd ../../../ && npm run build"
+  command = "rm -rf netlify/functions/check-engage-auth/node_modules && npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["chrome-aws-lambda", "puppeteer-core"]
+  external_node_modules = []
 
 [dev]
   command = "echo 'Starting Netlify Dev server'"
