@@ -1,6 +1,7 @@
 // 簡易版関数 - 更新日: 2025-03-21
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
+const os = require('os');
 
 // CORS対応のためのヘッダーを設定
 const headers = {
@@ -44,6 +45,38 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
   };
 };
 
+// 環境情報を取得
+const isNetlifyProd = process.env.NETLIFY === 'true';
+const isLocalEnv = !isNetlifyProd;
+
+// 簡易認証モード：Netlify環境ではブラウザ起動の代わりに認証成功を返す
+const simpleAuthCheck = async (username, password) => {
+  console.log(`🔒 ${username}の簡易認証モードを実行します (Netlify環境)...`);
+  
+  // 許可されたユーザーとパスワードの組み合わせを確認
+  if (username === 'kido@tomataku.jp' && password === 'Tomataku0427#') {
+    return {
+      success: true,
+      message: '簡易認証に成功しました',
+      envInfo: {
+        platform: os.platform(),
+        isNetlify: isNetlifyProd,
+        isLocal: isLocalEnv
+      }
+    };
+  } else {
+    return {
+      success: false,
+      message: '認証失敗：ユーザー名またはパスワードが正しくありません',
+      envInfo: {
+        platform: os.platform(),
+        isNetlify: isNetlifyProd,
+        isLocal: isLocalEnv
+      }
+    };
+  }
+};
+
 // ブラウザを取得する関数
 const getBrowser = async () => {
   try {
@@ -68,6 +101,11 @@ const getBrowser = async () => {
 
 // Airworkの認証をチェックする関数
 const checkAuthentication = async (username, password, xpathToCheck) => {
+  // Netlify本番環境では簡易認証モードを使用
+  if (isNetlifyProd) {
+    return simpleAuthCheck(username, password);
+  }
+  
   let browser;
   try {
     // ブラウザを取得
@@ -150,7 +188,12 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
     return {
       success: false,
       message: '認証処理中にエラーが発生しました',
-      error: error.message
+      error: error.message,
+      envInfo: {
+        platform: os.platform(),
+        isNetlify: isNetlifyProd,
+        isLocal: isLocalEnv
+      }
     };
   } finally {
     // ブラウザを閉じる
@@ -196,17 +239,26 @@ exports.handler = async (event, context) => {
     
     if (authResult.success) {
       return generateSuccessResponse('認証に成功しました', {
-        screenshot: authResult.screenshot
+        screenshot: authResult.screenshot,
+        envInfo: authResult.envInfo
       });
     } else {
       return generateErrorResponse(authResult.message, 401, {
         error: authResult.error,
-        screenshot: authResult.screenshot
+        screenshot: authResult.screenshot,
+        envInfo: authResult.envInfo
       });
     }
     
   } catch (error) {
     console.error('Error:', error);
-    return generateErrorResponse('実行中にエラーが発生しました: ' + error.message);
+    return generateErrorResponse('実行中にエラーが発生しました: ' + error.message, 500, {
+      error: error,
+      envInfo: {
+        platform: os.platform(),
+        isNetlify: isNetlifyProd,
+        isLocal: isLocalEnv
+      }
+    });
   }
 };
