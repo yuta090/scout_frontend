@@ -1,7 +1,10 @@
-// 簡易版関数 - 更新日: 2025-03-21
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+// Airwork認証チェック関数 - 更新日: 2025-03-21
+const chromium = require('chrome-aws-lambda');
+const puppeteer = chromium.puppeteer;
 const os = require('os');
+
+// 環境変数をチェック
+const isLocal = !process.env.NETLIFY;
 
 // CORS対応のためのヘッダーを設定
 const headers = {
@@ -45,34 +48,17 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
   };
 };
 
-// 環境情報を取得 - Netlify環境の検出を強化
-const isNetlify = () => {
-  // 明示的なNetlify環境変数
-  const hasNetlifyEnv = process.env.NETLIFY === 'true';
-  
-  // Netlify固有のパスの存在も確認
-  const hasNetlifyPath = process.env.LAMBDA_TASK_ROOT || 
-                         process.env.AWS_LAMBDA_FUNCTION_NAME || 
-                         process.cwd().includes('/var/task');
-  
-  // 常にNetlify環境と判断（開発時は一時的にコメントアウト可能）
-  return true; // hasNetlifyEnv || hasNetlifyPath;
-};
-
-// 環境変数のデバッグ情報を取得
+// 環境情報を取得
 const getEnvInfo = () => {
   return {
     platform: os.platform(),
-    isNetlify: isNetlify(),
+    isNetlify: !!process.env.NETLIFY,
     cwd: process.cwd(),
-    netlifyEnv: process.env.NETLIFY,
-    nodeEnv: process.env.NODE_ENV,
-    lambdaTaskRoot: process.env.LAMBDA_TASK_ROOT,
-    functionName: process.env.AWS_LAMBDA_FUNCTION_NAME
+    nodeEnv: process.env.NODE_ENV
   };
 };
 
-// 簡易認証モード：Netlify環境ではブラウザ起動の代わりに認証成功を返す
+// ローカルテスト用の簡易認証
 const simpleAuthCheck = async (username, password) => {
   console.log(`🔒 ${username}の簡易認証モードを実行します...`);
   
@@ -92,43 +78,50 @@ const simpleAuthCheck = async (username, password) => {
   }
 };
 
+// ブラウザインスタンスをキャッシュ
+let _browser = null;
+
 // ブラウザを取得する関数
 const getBrowser = async () => {
+  if (_browser) {
+    return _browser;
+  }
+  
   try {
-    // Netlify環境向けに@sparticuz/chromiumを設定
-    await chromium.font();
-    
-    // executablePathを文字列として取得してから使用
-    const execPath = await chromium.executablePath();
-    
-    return puppeteer.launch({
+    // Netlify環境向けに最適化された起動設定
+    console.log('🌐 ブラウザを起動しています...');
+    _browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
-      executablePath: execPath,
+      executablePath: await chromium.executablePath,
       headless: chromium.headless,
       ignoreHTTPSErrors: true
     });
+    console.log('✅ ブラウザの起動に成功しました');
+    return _browser;
   } catch (error) {
-    console.error('ブラウザ起動エラー:', error);
+    console.error('❌ ブラウザ起動エラー:', error);
     throw error;
   }
 };
 
 // Airworkの認証をチェックする関数
 const checkAuthentication = async (username, password, xpathToCheck) => {
-  // Netlify本番環境では簡易認証モードを使用
-  if (isNetlify()) {
+  // ローカルテスト環境では簡易認証モードを使用
+  if (isLocal) {
+    console.log('🧪 ローカルテスト環境を検出、簡易認証モードを使用します');
     return simpleAuthCheck(username, password);
   }
   
-  let browser;
+  let page = null;
+  
   try {
     // ブラウザを取得
-    browser = await getBrowser();
-    console.log('🌐 ブラウザを起動しました');
+    const browser = await getBrowser();
+    console.log('🌐 ブラウザセッションを開始します');
     
     // 新しいページを開く
-    const page = await browser.newPage();
+    page = await browser.newPage();
     
     // Airworkインタラクションページにアクセス
     console.log('🔄 Airworkインタラクションページにアクセスします...');
@@ -207,10 +200,10 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
       envInfo: getEnvInfo()
     };
   } finally {
-    // ブラウザを閉じる
-    if (browser) {
-      await browser.close();
-      console.log('🔒 ブラウザセッションを終了しました');
+    // ページを閉じる（ブラウザは再利用するため閉じない）
+    if (page) {
+      await page.close();
+      console.log('🔒 ページセッションを終了しました');
     }
   }
 };
@@ -264,7 +257,7 @@ exports.handler = async (event, context) => {
   } catch (error) {
     console.error('Error:', error);
     return generateErrorResponse('実行中にエラーが発生しました: ' + error.message, 500, {
-      error: error,
+      error: error.message,
       envInfo: getEnvInfo()
     });
   }

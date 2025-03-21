@@ -1,21 +1,20 @@
 [build]
   command = "npm run build"
-  publish = "public"
+  publish = "dist"
   functions = "netlify/functions"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["@sparticuz/chromium"]
+  external_node_modules = ["chrome-aws-lambda", "puppeteer-core"]
+
+[dev]
+  command = "echo 'Starting Netlify Dev server'"
+  port = 8888
+  framework = "#custom"
+  autoLaunch = true
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-
-[dev]
-  command = "echo 'Starting Netlify Functions server'"
-  port = 8888
-  targetPort = 3000
-  framework = "#static"
-  autoLaunch = true
