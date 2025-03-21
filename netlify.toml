@@ -1,11 +1,11 @@
 [build]
-  command = "echo 'Functions only deployment'"
+  command = "npm run build"
   publish = "public"
   functions = "netlify/functions"
 
 [functions]
+  directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["@sparticuz/chromium", "puppeteer-core"]
 
 [[redirects]]
   from = "/*"
@@ -13,5 +13,8 @@
   status = 200
 
 [dev]
+  command = "echo 'Starting Netlify Functions server'"
   port = 8888
+  targetPort = 3000
+  framework = "#static"
   autoLaunch = true
