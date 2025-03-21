@@ -2,12 +2,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const handler = async (req: Request) => {
-  // Handle CORS preflight requests
+serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -27,7 +27,8 @@ const handler = async (req: Request) => {
           headers: {
             ...corsHeaders,
             'Content-Type': 'application/json'
-          }
+          },
+          status: 400
         }
       );
     }
@@ -38,11 +39,12 @@ const handler = async (req: Request) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
         },
         body: JSON.stringify({
           email: username,
-          password,
+          password: password,
           remember_me: false
         })
       });
@@ -59,7 +61,8 @@ const handler = async (req: Request) => {
             headers: {
               ...corsHeaders,
               'Content-Type': 'application/json'
-            }
+            },
+            status: 401
           }
         );
       }
@@ -73,7 +76,8 @@ const handler = async (req: Request) => {
           headers: {
             ...corsHeaders,
             'Content-Type': 'application/json'
-          }
+          },
+          status: 200
         }
       );
 
@@ -94,10 +98,9 @@ const handler = async (req: Request) => {
         headers: {
           ...corsHeaders,
           'Content-Type': 'application/json'
-        }
+        },
+        status: 500
       }
     );
   }
-};
-
-serve(handler);// コメントを追加してテスト
+});// 追加テスト: バージョン管理テスト
