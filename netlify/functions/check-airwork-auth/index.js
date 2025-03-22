@@ -1,7 +1,29 @@
-// Airwork認証チェック関数 - 更新日: 2025-03-23
+// Airwork認証チェック関数 - 更新日: 2025-03-24
 const chromium = require('chrome-aws-lambda');
 const puppeteer = chromium.puppeteer;
 const os = require('os');
+
+// 詳細環境診断
+console.log('🧪 デプロイ情報診断:', {
+  date: new Date().toISOString(),
+  deplyTimestamp: '2025-03-24T13:00:00',
+  validationVersion: 'v1.2.3',
+  env: {
+    NETLIFY: process.env.NETLIFY,
+    NODE_ENV: process.env.NODE_ENV,
+    LAMBDA_TASK_ROOT: process.env.LAMBDA_TASK_ROOT,
+    AWS_LAMBDA_FUNCTION_NAME: process.env.AWS_LAMBDA_FUNCTION_NAME,
+    SITE_ID: process.env.SITE_ID
+  },
+  system: {
+    platform: os.platform(),
+    arch: os.arch(),
+    release: os.release(),
+    memory: `${Math.round(os.totalmem() / (1024 * 1024))}MB`,
+    freemem: `${Math.round(os.freemem() / (1024 * 1024))}MB`,
+    cpus: os.cpus().length
+  }
+});
 
 // 環境変数をチェック
 const isLocal = !process.env.NETLIFY;
@@ -68,6 +90,8 @@ const simpleAuthCheck = async (username, password) => {
   console.log(`🔒 ${username}の簡易認証モードを実行します...`);
   usingSimpleAuthMode = true; // 簡易認証モードフラグをオンに
   
+  console.log('📋 認証情報チェック - ユーザー名:', username);
+  
   // 許可されたユーザーとパスワードの組み合わせを確認
   const validCredentials = [
     { username: 'kido@tomataku.jp', password: 'Tomataku0427#' }, // Airwork用認証情報
@@ -75,12 +99,15 @@ const simpleAuthCheck = async (username, password) => {
     { username: 't.oouchi@yokohamamusen.co.jp', password: 'yk7537623' }  // 新規認証情報
   ];
   
+  console.log('✅ 有効な認証情報リスト:', validCredentials.map(c => c.username).join(', '));
+  
   // ユーザー名とパスワードが一致するかチェック
   const matchedCredential = validCredentials.find(cred => 
     cred.username === username && cred.password === password
   );
   
   if (matchedCredential) {
+    console.log('🎉 認証情報が一致しました:', matchedCredential.username);
     return {
       success: true,
       message: '簡易認証に成功しました',
@@ -88,6 +115,7 @@ const simpleAuthCheck = async (username, password) => {
       service: matchedCredential.username.includes('yokohamamusen') || matchedCredential.username.includes('hraim') ? 'engage' : 'airwork'
     };
   } else {
+    console.log('❌ 認証情報が一致しませんでした');
     return {
       success: false,
       message: '認証失敗：ユーザー名またはパスワードが正しくありません',
@@ -225,6 +253,13 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
 
 // メイン関数
 exports.handler = async (event, context) => {
+  console.log('📣 関数呼び出し情報:', {
+    httpMethod: event.httpMethod,
+    path: event.path,
+    functionName: context.functionName || 'unknown',
+    headers: Object.keys(event.headers || {})
+  });
+  
   // usingSimpleAuthModeをリセット
   usingSimpleAuthMode = false;
   
