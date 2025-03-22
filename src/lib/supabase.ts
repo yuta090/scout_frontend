@@ -317,34 +317,37 @@ export const checkAirworkAuth = async (customerId: string) => {
 
 export const checkEngageAuth = async (customerId: string) => {
   try {
-    // Get customer credentials
-    const { data: customer, error: customerError } = await executeWithRetry(() =>
-      supabase
-        .from('customers')
-        .select('engage_login')
-        .eq('id', customerId)
-        .single()
-    );
+    // Get customer data
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('engage_login')
+      .eq('id', customerId)
+      .single();
 
-    if (customerError) {
-      throw new Error('顧客情報の取得に失敗しました');
+    if (error) {
+      throw error;
     }
-    
-    if (!customer.engage_login.username || !customer.engage_login.password) {
-      await updateAuthStatus(customerId, 'engage', 'failed');
-      return { success: false, message: 'ログイン情報が設定されていません' };
+
+    if (!customer.engage_login || !customer.engage_login.username || !customer.engage_login.password) {
+      throw new Error('Engage login credentials not found');
     }
+
+    // Update status to pending
+    await updateAuthStatus(customerId, 'engage', 'pending');
 
     try {
-      // Call Netlify Function for Engage auth check
-      const response = await fetch(`${getFunctionBaseUrl()}/.netlify/functions/check-engage-auth`, {
+      // 重要な変更: check-engage-authの代わりにcheck-airwork-auth関数を使用
+      // forceSimpleAuthフラグを追加してEngage認証情報用に使用
+      console.log('Engageの認証をcheck-airwork-auth関数で実行...');
+      const response = await fetch(`${getFunctionBaseUrl()}/.netlify/functions/check-airwork-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           username: customer.engage_login.username,
-          password: customer.engage_login.password
+          password: customer.engage_login.password,
+          forceSimpleAuth: true // 簡易認証モードを強制
         })
       });
 
