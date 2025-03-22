@@ -1,7 +1,7 @@
 {
   "name": "engage-auth-simple",
   "version": "1.0.0",
-  "description": "Engage認証チェック用の簡易関数",
+  "description": "シンプル版Engage認証チェック用関数",
   "main": "index.js",
   "dependencies": {
     "@netlify/functions": "^1.6.0"

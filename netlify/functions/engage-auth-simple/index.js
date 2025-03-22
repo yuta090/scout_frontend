@@ -1,4 +1,4 @@
-// 完全に新しいEngage簡易認証関数 - 更新日: 2025-03-23
+// Engage認証チェック関数 - シンプル版 (名称変更版) - 更新日: 2025-03-24
 
 // 環境変数を出力（デバッグ用）
 console.log('Environment variables:', {
@@ -7,6 +7,9 @@ console.log('Environment variables:', {
   functionName: process.env.FUNCTION_NAME,
   functionPath: process.env.LAMBDA_TASK_ROOT
 });
+
+// 簡易認証モードのフラグ (常にtrue)
+const usingSimpleAuthMode = true;
 
 // CORS対応のためのヘッダーを設定
 const headers = {
@@ -32,7 +35,7 @@ const generateSuccessResponse = (message, data = {}) => {
     body: JSON.stringify({
       success: true,
       message,
-      isSimpleMode: true,
+      usingSimpleAuthMode,
       ...data
     })
   };
@@ -46,7 +49,7 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
     body: JSON.stringify({
       success: false,
       message,
-      isSimpleMode: true,
+      usingSimpleAuthMode,
       error: errorDetails
     })
   };
@@ -58,17 +61,46 @@ const getEnvInfo = () => {
     platform: process.platform,
     isNetlify: process.env.NETLIFY === 'true',
     cwd: process.cwd(),
-    nodeEnv: process.env.NODE_ENV,
-    nodeVersion: process.version
+    functionName: process.env.LAMBDA_TASK_ROOT || process.env.FUNCTION_NAME
   };
+};
+
+// 簡易認証チェック関数
+const simpleAuthCheck = async (username, password) => {
+  console.log(`🔒 ${username}の簡易認証を実行します...`);
+  
+  // 許可されたユーザーとパスワードの組み合わせを確認
+  const validCredentials = [
+    { username: 'hraim@tomataku.jp', password: 'password123' },
+    // 他の有効な認証情報を追加可能
+  ];
+  
+  const isValid = validCredentials.some(cred => 
+    cred.username === username && cred.password === password
+  );
+  
+  if (isValid) {
+    console.log('✅ 認証成功');
+    return {
+      success: true,
+      message: '認証に成功しました',
+      envInfo: getEnvInfo()
+    };
+  } else {
+    console.log('❌ 認証失敗');
+    return {
+      success: false,
+      message: '認証失敗：ユーザー名またはパスワードが正しくありません',
+      envInfo: getEnvInfo()
+    };
+  }
 };
 
 // メイン関数
 exports.handler = async (event, context) => {
-  console.log('Function called with event:', {
-    method: event.httpMethod,
-    path: event.path,
-    headers: event.headers
+  console.log('関数が呼び出されました：', {
+    httpMethod: event.httpMethod,
+    path: event.path
   });
   
   // OPTIONSリクエストの処理
@@ -86,9 +118,9 @@ exports.handler = async (event, context) => {
     let requestBody;
     try {
       requestBody = JSON.parse(event.body || '{}');
-      console.log('Request body parsed:', requestBody);
+      console.log('リクエストボディ:', requestBody);
     } catch (error) {
-      console.error('Error parsing request body:', error);
+      console.error('リクエストボディ解析エラー:', error);
       return generateErrorResponse('リクエストボディの解析に失敗しました', 400);
     }
     
@@ -99,34 +131,22 @@ exports.handler = async (event, context) => {
     
     const { username, password } = requestBody;
     
-    // 簡易認証チェック
-    console.log(`🔒 ${username}の簡易認証を実行します...`);
+    // 簡易認証を実行
+    console.log(`🔒 ${username}の認証を開始します...`);
+    const authResult = await simpleAuthCheck(username, password);
     
-    // 許可されたユーザーとパスワードの組み合わせを確認
-    const validCredentials = [
-      { username: 'hraim@tomataku.jp', password: 'password123' },
-      // 他の有効な認証情報を追加
-    ];
-    
-    const isValid = validCredentials.some(cred => 
-      cred.username === username && cred.password === password
-    );
-    
-    if (isValid) {
-      console.log('✅ 認証成功');
+    if (authResult.success) {
       return generateSuccessResponse('認証に成功しました', {
-        envInfo: getEnvInfo()
+        envInfo: authResult.envInfo
       });
     } else {
-      console.log('❌ 認証失敗');
-      return generateErrorResponse('認証失敗：ユーザー名またはパスワードが正しくありません', 401, {
-        envInfo: getEnvInfo()
+      return generateErrorResponse(authResult.message, 401, {
+        envInfo: authResult.envInfo
       });
     }
     
   } catch (error) {
-    console.error('Error details:', error);
-    console.error('Error stack:', error.stack);
+    console.error('エラー詳細:', error);
     return generateErrorResponse('実行中にエラーが発生しました: ' + error.message, 500, {
       error: error.message,
       stack: error.stack,
