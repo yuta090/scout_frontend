@@ -6,8 +6,8 @@ const os = require('os');
 // 詳細環境診断
 console.log('🧪 デプロイ情報診断:', {
   date: new Date().toISOString(),
-  deplyTimestamp: '2025-03-24T13:00:00',
-  validationVersion: 'v1.2.3',
+  deplyTimestamp: '2025-03-24T14:30:00',
+  validationVersion: 'v2.0.0',
   env: {
     NETLIFY: process.env.NETLIFY,
     NODE_ENV: process.env.NODE_ENV,
@@ -28,7 +28,7 @@ console.log('🧪 デプロイ情報診断:', {
 // 環境変数をチェック
 const isLocal = !process.env.NETLIFY;
 
-// 簡易認証モードのフラグ
+// 簡易認証モードのフラグ (常にfalseに初期化)
 let usingSimpleAuthMode = false;
 
 // CORS対応のためのヘッダーを設定
@@ -81,50 +81,9 @@ const getEnvInfo = () => {
     platform: os.platform(),
     isNetlify: !!process.env.NETLIFY,
     cwd: process.cwd(),
-    nodeEnv: process.env.NODE_ENV
+    nodeEnv: process.env.NODE_ENV,
+    functionVersion: '2.0.0'
   };
-};
-
-// ローカルテスト用の簡易認証
-const simpleAuthCheck = async (username, password, serviceType = null) => {
-  console.log(`🔒 ${username}の簡易認証モードを実行します...`);
-  usingSimpleAuthMode = true; // 簡易認証モードフラグをオンに
-  
-  console.log('📋 認証情報チェック - ユーザー名:', username);
-  console.log('🔧 指定されたサービスタイプ:', serviceType || 'なし（デフォルト）');
-  
-  // 許可されたユーザーとパスワードの組み合わせを確認
-  const validCredentials = [
-    { username: 'kido@tomataku.jp', password: 'Tomataku0427#', service: 'airwork' }, // Airwork用認証情報
-    { username: 'hraim@tomataku.jp', password: 'password123', service: 'engage' },   // Engage用認証情報
-    { username: 't.oouchi@yokohamamusen.co.jp', password: 'yk7537623', service: 'engage' }  // 新規認証情報
-  ];
-  
-  console.log('✅ 有効な認証情報リスト:', validCredentials.map(c => c.username).join(', '));
-  
-  // ユーザー名とパスワードが一致するかチェック
-  const matchedCredential = validCredentials.find(cred => 
-    cred.username === username && cred.password === password
-  );
-  
-  if (matchedCredential) {
-    console.log('🎉 認証情報が一致しました:', matchedCredential.username);
-    // サービスタイプは明示的に指定されたものを優先、ない場合は資格情報のデフォルト値を使用
-    const service = serviceType || matchedCredential.service || 'unknown';
-    return {
-      success: true,
-      message: '簡易認証に成功しました',
-      envInfo: getEnvInfo(),
-      service: service
-    };
-  } else {
-    console.log('❌ 認証情報が一致しませんでした');
-    return {
-      success: false,
-      message: '認証失敗：ユーザー名またはパスワードが正しくありません',
-      envInfo: getEnvInfo()
-    };
-  }
 };
 
 // ブラウザインスタンスをキャッシュ
@@ -154,17 +113,40 @@ const getBrowser = async () => {
   }
 };
 
-// Airworkの認証をチェックする関数
-const checkAuthentication = async (username, password, xpathToCheck) => {
-  // ローカルテスト環境では簡易認証モードを使用
-  if (isLocal) {
-    console.log('🧪 ローカルテスト環境を検出、簡易認証モードを使用します');
-    return simpleAuthCheck(username, password);
+// サービスタイプに基づいて認証URLとXPathを選択
+const getAuthConfig = (serviceType) => {
+  // サービスタイプに基づいて異なる認証設定を返す
+  if (serviceType === 'engage') {
+    return {
+      loginUrl: 'https://engage.com/login', // Engageのログインページ
+      loginButtonXPath: "//a[contains(text(), 'ログイン')]",
+      usernameSelector: '#username',
+      passwordSelector: '#password',
+      submitButtonXPath: "//button[contains(text(), 'ログイン')]",
+      successXPath: "//a[contains(text(), 'ログアウト')]"
+    };
+  } else {
+    // デフォルトはAirwork
+    return {
+      loginUrl: 'https://ats.rct.airwork.net/interaction',
+      loginButtonXPath: "//a[contains(text(), 'ログイン')]",
+      usernameSelector: '#account',
+      passwordSelector: '#password',
+      submitButtonXPath: "//*[@id='mainContent']/div/div[2]/div[4]/input",
+      successXPath: "//a[contains(@class, 'logout')]"
+    };
   }
-  
+};
+
+// 認証をチェックする関数
+const performAuthentication = async (username, password, serviceType) => {
   let page = null;
   
   try {
+    // サービスタイプに基づいて認証設定を取得
+    const authConfig = getAuthConfig(serviceType);
+    console.log(`🔧 認証設定: ${serviceType || 'airwork'}`);
+    
     // ブラウザを取得
     const browser = await getBrowser();
     console.log('🌐 ブラウザセッションを開始します');
@@ -172,9 +154,9 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
     // 新しいページを開く
     page = await browser.newPage();
     
-    // Airworkインタラクションページにアクセス
-    console.log('🔄 Airworkインタラクションページにアクセスします...');
-    await page.goto('https://ats.rct.airwork.net/interaction', {
+    // ログインページにアクセス
+    console.log(`🔄 ${serviceType || 'airwork'}のログインページにアクセスします...`);
+    await page.goto(authConfig.loginUrl, {
       waitUntil: 'networkidle2',
       timeout: 30000
     });
@@ -183,27 +165,29 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
     console.log('🔍 ログインボタンを探しています...');
     
     // XPathでログインボタンを見つける試み
-    const loginButtonXPath = "//a[contains(text(), 'ログイン')]";
-    await page.waitForXPath(loginButtonXPath, { timeout: 10000 });
-    const [loginButton] = await page.$x(loginButtonXPath);
-    
-    if (loginButton) {
-      console.log('✅ ログインボタンが見つかりました（XPath）');
-      await loginButton.click();
-      await page.waitForNavigation({ waitUntil: 'networkidle2' });
-    } else {
-      throw new Error('ログインボタンが見つかりませんでした');
+    try {
+      await page.waitForXPath(authConfig.loginButtonXPath, { timeout: 10000 });
+      const [loginButton] = await page.$x(authConfig.loginButtonXPath);
+      
+      if (loginButton) {
+        console.log('✅ ログインボタンが見つかりました');
+        await loginButton.click();
+        await page.waitForNavigation({ waitUntil: 'networkidle2' });
+      } else {
+        console.log('⚠️ ログインボタンが見つかりませんでした - フォームが既に表示されている可能性があります');
+      }
+    } catch (err) {
+      console.log('⚠️ ログインボタンの待機中にタイムアウト - フォームが既に表示されている可能性があります');
     }
     
     // ログインフォームに入力
     console.log('📝 ログイン情報を入力しています...');
-    await page.type('#account', username);
-    await page.type('#password', password);
+    await page.type(authConfig.usernameSelector, username);
+    await page.type(authConfig.passwordSelector, password);
     
     // ログインボタンをクリック
-    const loginSubmitXPath = "//*[@id='mainContent']/div/div[2]/div[4]/input";
-    await page.waitForXPath(loginSubmitXPath, { timeout: 10000 });
-    const [loginSubmit] = await page.$x(loginSubmitXPath);
+    await page.waitForXPath(authConfig.submitButtonXPath, { timeout: 10000 });
+    const [loginSubmit] = await page.$x(authConfig.submitButtonXPath);
     
     if (loginSubmit) {
       console.log('✅ ログイン送信ボタンが見つかりました');
@@ -214,9 +198,9 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
     }
     
     // 成功したかどうかを確認するXPathを待つ
-    console.log(`🔍 成功確認のXPathを待っています: ${xpathToCheck}`);
+    console.log(`🔍 成功確認のXPathを待っています: ${authConfig.successXPath}`);
     try {
-      await page.waitForXPath(xpathToCheck, { timeout: 15000 });
+      await page.waitForXPath(authConfig.successXPath, { timeout: 15000 });
       console.log('✅ 認証に成功しました！');
       
       // スクリーンショットを取得（デバッグ用）
@@ -225,7 +209,8 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
       return {
         success: true,
         message: '認証に成功しました',
-        screenshot: screenshotBuffer.toString('base64')
+        screenshot: screenshotBuffer.toString('base64'),
+        service: serviceType || 'airwork'
       };
     } catch (xpathError) {
       console.error('❌ 成功確認のXPathが見つかりませんでした:', xpathError.message);
@@ -235,16 +220,21 @@ const checkAuthentication = async (username, password, xpathToCheck) => {
       
       return {
         success: false,
-        message: '認証後のXPathが見つかりませんでした',
+        message: '認証に失敗しました: ユーザー名またはパスワードが正しくないか、ログイン後の画面が想定と異なります',
         error: xpathError.message,
-        screenshot: screenshotBuffer.toString('base64')
+        screenshot: screenshotBuffer.toString('base64'),
+        service: serviceType || 'airwork'
       };
     }
   } catch (error) {
     console.error('❌ 認証処理中にエラーが発生しました:', error.message);
-    // エラー発生時は簡易認証にフォールバック
-    console.log('⚠️ ブラウザでのエラーが発生したため、簡易認証にフォールバックします');
-    return simpleAuthCheck(username, password);
+    return {
+      success: false,
+      message: `認証処理中にエラーが発生しました: ${error.message}`,
+      error: error.message,
+      stack: error.stack,
+      service: serviceType || 'airwork'
+    };
   } finally {
     // ページを閉じる（ブラウザは再利用するため閉じない）
     if (page) {
@@ -284,7 +274,6 @@ exports.handler = async (event, context) => {
       console.log('📝 リクエスト内容:', {
         username: requestBody.username,
         hasPassword: !!requestBody.password,
-        forceSimpleAuth: requestBody.forceSimpleAuth,
         serviceType: requestBody.serviceType
       });
     } catch (error) {
@@ -298,62 +287,35 @@ exports.handler = async (event, context) => {
     
     const { username, password, serviceType } = requestBody;
     
-    // 強制的に簡易認証モードを使用するかどうか
-    if (requestBody.forceSimpleAuth || isLocal || process.env.NETLIFY) {
-      console.log('⚠️ 強制的に簡易認証モードを使用します');
-      const authResult = await simpleAuthCheck(username, password, serviceType);
-      
-      if (authResult.success) {
-        return generateSuccessResponse('強制簡易認証に成功しました', {
-          envInfo: authResult.envInfo,
-          service: authResult.service
-        });
-      } else {
-        return generateErrorResponse(authResult.message, 401, {
-          envInfo: authResult.envInfo
-        });
-      }
-    }
+    // forceSimpleAuthが指定されていても無視し、常に実際の認証テストを実行
+    console.log(`🔒 ${username}の認証を開始します... サービス: ${serviceType || 'airwork'}`);
     
-    // 認証チェックを実行
-    console.log(`🔒 ${username}の認証を開始します...`);
-    const authResult = await checkAuthentication(username, password, "//a[contains(@class, 'logout')]");
+    // 認証処理を実行
+    const authResult = await performAuthentication(username, password, serviceType);
     
     if (authResult.success) {
       return generateSuccessResponse('認証に成功しました', {
         screenshot: authResult.screenshot,
-        envInfo: authResult.envInfo
+        service: authResult.service,
+        envInfo: getEnvInfo()
       });
     } else {
       return generateErrorResponse(authResult.message, 401, {
-        envInfo: authResult.envInfo
+        error: authResult.error,
+        screenshot: authResult.screenshot,
+        service: authResult.service,
+        envInfo: getEnvInfo()
       });
     }
     
   } catch (error) {
-    console.error('処理中に予期せぬエラーが発生しました:', error.message);
-    // 最終手段として簡易認証にフォールバック
-    try {
-      console.log('⚠️ 予期せぬエラーが発生したため、最終手段として簡易認証を試みます');
-      const { username, password } = JSON.parse(event.body);
-      const authResult = await simpleAuthCheck(username, password);
-      
-      if (authResult.success) {
-        return generateSuccessResponse('エラー後の簡易認証に成功しました', {
-          error: error.message,
-          envInfo: authResult.envInfo
-        });
-      } else {
-        return generateErrorResponse(authResult.message, 401, {
-          originalError: error.message,
-          envInfo: authResult.envInfo
-        });
-      }
-    } catch (fallbackError) {
-      return generateErrorResponse('認証処理に完全に失敗しました: ' + error.message, 500, {
-        originalError: error.message,
-        fallbackError: fallbackError.message
-      });
-    }
+    console.error('❌ 処理中に予期せぬエラーが発生しました:', error.message);
+    console.error('📚 エラースタック:', error.stack);
+    
+    return generateErrorResponse('認証処理に失敗しました: ' + error.message, 500, {
+      error: error.message,
+      stack: error.stack,
+      envInfo: getEnvInfo()
+    });
   }
 };
