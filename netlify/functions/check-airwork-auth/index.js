@@ -69,11 +69,22 @@ const simpleAuthCheck = async (username, password) => {
   usingSimpleAuthMode = true; // 簡易認証モードフラグをオンに
   
   // 許可されたユーザーとパスワードの組み合わせを確認
-  if (username === 'kido@tomataku.jp' && password === 'Tomataku0427#') {
+  const validCredentials = [
+    { username: 'kido@tomataku.jp', password: 'Tomataku0427#' }, // Airwork用認証情報
+    { username: 'hraim@tomataku.jp', password: 'password123' }   // Engage用認証情報
+  ];
+  
+  // ユーザー名とパスワードが一致するかチェック
+  const matchedCredential = validCredentials.find(cred => 
+    cred.username === username && cred.password === password
+  );
+  
+  if (matchedCredential) {
     return {
       success: true,
       message: '簡易認証に成功しました',
-      envInfo: getEnvInfo()
+      envInfo: getEnvInfo(),
+      service: matchedCredential.username.includes('hraim') ? 'engage' : 'airwork'
     };
   } else {
     return {
