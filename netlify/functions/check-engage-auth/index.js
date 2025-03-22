@@ -1,15 +1,11 @@
-// Engage認証チェック関数 - 更新日: 2025-03-23 (常に簡易認証モード)
+// Engage認証チェック関数 - 更新日: 2025-03-24
+const os = require('os');
 
-// 環境変数を出力（デバッグ用）
-console.log('Environment variables:', {
-  netlify: process.env.NETLIFY,
-  nodeEnv: process.env.NODE_ENV,
-  functionName: process.env.FUNCTION_NAME,
-  functionPath: process.env.LAMBDA_TASK_ROOT
-});
+// 環境変数をチェック
+const isLocal = !process.env.NETLIFY;
 
-// 簡易認証モードのフラグ (常にtrue)
-const usingSimpleAuthMode = true;
+// 簡易認証モードのフラグ
+let usingSimpleAuthMode = false;
 
 // CORS対応のためのヘッダーを設定
 const headers = {
@@ -58,37 +54,27 @@ const generateErrorResponse = (message, statusCode = 500, errorDetails = null) =
 // 環境情報を取得
 const getEnvInfo = () => {
   return {
-    platform: process.platform,
-    isNetlify: process.env.NETLIFY === 'true',
+    platform: os.platform(),
+    isNetlify: !!process.env.NETLIFY,
     cwd: process.cwd(),
-    nodeEnv: process.env.NODE_ENV,
-    nodeVersion: process.version
+    lambdaTaskRoot: process.env.LAMBDA_TASK_ROOT,
+    functionName: process.env.AWS_LAMBDA_FUNCTION_NAME
   };
 };
 
-// 簡易認証チェック関数
+// ローカルテスト用の簡易認証
 const simpleAuthCheck = async (username, password) => {
-  console.log(`🔒 ${username}の簡易認証を実行します...`);
+  console.log(`🔒 ${username}の簡易認証モードを実行します...`);
+  usingSimpleAuthMode = true; // 簡易認証モードフラグをオンに
   
-  // 許可されたユーザーとパスワードの組み合わせを確認（本番環境では適宜変更）
-  const validCredentials = [
-    { username: 'hraim@tomataku.jp', password: 'password123' },
-    // 他の有効な認証情報を追加
-  ];
-  
-  const isValid = validCredentials.some(cred => 
-    cred.username === username && cred.password === password
-  );
-  
-  if (isValid) {
-    console.log('✅ 認証成功');
+  // 許可されたユーザーとパスワードの組み合わせを確認
+  if (username === 'hraim@tomataku.jp' && password === 'password123') {
     return {
       success: true,
-      message: '認証に成功しました',
+      message: '簡易認証に成功しました',
       envInfo: getEnvInfo()
     };
   } else {
-    console.log('❌ 認証失敗');
     return {
       success: false,
       message: '認証失敗：ユーザー名またはパスワードが正しくありません',
@@ -99,11 +85,8 @@ const simpleAuthCheck = async (username, password) => {
 
 // メイン関数
 exports.handler = async (event, context) => {
-  console.log('Function called with event:', {
-    method: event.httpMethod,
-    path: event.path,
-    headers: event.headers
-  });
+  // usingSimpleAuthModeをリセット
+  usingSimpleAuthMode = false;
   
   // OPTIONSリクエストの処理
   if (event.httpMethod === 'OPTIONS') {
@@ -119,10 +102,8 @@ exports.handler = async (event, context) => {
     // リクエストボディの解析
     let requestBody;
     try {
-      requestBody = JSON.parse(event.body || '{}');
-      console.log('Request body parsed:', requestBody);
+      requestBody = JSON.parse(event.body);
     } catch (error) {
-      console.error('Error parsing request body:', error);
       return generateErrorResponse('リクエストボディの解析に失敗しました', 400);
     }
     
@@ -133,8 +114,24 @@ exports.handler = async (event, context) => {
     
     const { username, password } = requestBody;
     
-    // 簡易認証を実行
-    console.log(`🔒 ${username}の簡易認証を開始します...`);
+    // 強制的に簡易認証モードを使用するかどうか
+    if (requestBody.forceSimpleAuth || isLocal || process.env.NETLIFY) {
+      console.log('⚠️ 強制的に簡易認証モードを使用します');
+      const authResult = await simpleAuthCheck(username, password);
+      
+      if (authResult.success) {
+        return generateSuccessResponse('強制簡易認証に成功しました', {
+          envInfo: authResult.envInfo
+        });
+      } else {
+        return generateErrorResponse(authResult.message, 401, {
+          envInfo: authResult.envInfo
+        });
+      }
+    }
+    
+    // 通常のフローでは常に簡易認証モードを使用（Puppeteerは使用しない）
+    console.log(`🔒 ${username}の認証を開始します...`);
     const authResult = await simpleAuthCheck(username, password);
     
     if (authResult.success) {
@@ -148,12 +145,29 @@ exports.handler = async (event, context) => {
     }
     
   } catch (error) {
-    console.error('Error details:', error);
-    console.error('Error stack:', error.stack);
-    return generateErrorResponse('実行中にエラーが発生しました: ' + error.message, 500, {
-      error: error.message,
-      stack: error.stack,
-      envInfo: getEnvInfo()
-    });
+    console.error('処理中に予期せぬエラーが発生しました:', error.message);
+    // 最終手段として簡易認証にフォールバック
+    try {
+      console.log('⚠️ 予期せぬエラーが発生したため、最終手段として簡易認証を試みます');
+      const { username, password } = JSON.parse(event.body);
+      const authResult = await simpleAuthCheck(username, password);
+      
+      if (authResult.success) {
+        return generateSuccessResponse('エラー後の簡易認証に成功しました', {
+          error: error.message,
+          envInfo: authResult.envInfo
+        });
+      } else {
+        return generateErrorResponse(authResult.message, 401, {
+          originalError: error.message,
+          envInfo: authResult.envInfo
+        });
+      }
+    } catch (fallbackError) {
+      return generateErrorResponse('認証処理に完全に失敗しました: ' + error.message, 500, {
+        originalError: error.message,
+        fallbackError: fallbackError.message
+      });
+    }
   }
 }; 
