@@ -6,6 +6,7 @@
 [build.environment]
   NETLIFY_CLEAR_CACHE = "true"
   NODE_ENV = "production"
+  CACHE_BUST = "2025-03-24-001"
 
 [functions]
   directory = "netlify/functions"
