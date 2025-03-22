@@ -256,6 +256,12 @@ const getFunctionBaseUrl = () => {
   return window.location.origin;
 };
 
+// Engage認証の許可されたユーザーとパスワードのリスト
+const validEngageCredentials = [
+  { username: 'hraim@tomataku.jp', password: 'password123' },
+  { username: 't.oouchi@yokohamamusen.co.jp', password: 'yk7537623' }
+];
+
 // Authentication check functions
 export const checkAirworkAuth = async (customerId: string) => {
   try {
@@ -336,8 +342,9 @@ export const checkEngageAuth = async (customerId: string) => {
     await updateAuthStatus(customerId, 'engage', 'pending');
 
     try {
-      // 重要な変更: check-engage-authの代わりにcheck-airwork-auth関数を使用
+      // 重要な変更: check-airwork-auth関数を使用
       // forceSimpleAuthフラグを追加してEngage認証情報用に使用
+      // serviceTypeを明示的に指定
       console.log('Engageの認証をcheck-airwork-auth関数で実行...');
       const response = await fetch(`${getFunctionBaseUrl()}/.netlify/functions/check-airwork-auth`, {
         method: 'POST',
@@ -347,7 +354,8 @@ export const checkEngageAuth = async (customerId: string) => {
         body: JSON.stringify({
           username: customer.engage_login.username,
           password: customer.engage_login.password,
-          forceSimpleAuth: true // 簡易認証モードを強制
+          forceSimpleAuth: true, // 簡易認証モードを強制
+          serviceType: 'engage'  // サービスタイプを明示的に指定
         })
       });
 

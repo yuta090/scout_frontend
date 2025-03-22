@@ -86,17 +86,18 @@ const getEnvInfo = () => {
 };
 
 // ローカルテスト用の簡易認証
-const simpleAuthCheck = async (username, password) => {
+const simpleAuthCheck = async (username, password, serviceType = null) => {
   console.log(`🔒 ${username}の簡易認証モードを実行します...`);
   usingSimpleAuthMode = true; // 簡易認証モードフラグをオンに
   
   console.log('📋 認証情報チェック - ユーザー名:', username);
+  console.log('🔧 指定されたサービスタイプ:', serviceType || 'なし（デフォルト）');
   
   // 許可されたユーザーとパスワードの組み合わせを確認
   const validCredentials = [
-    { username: 'kido@tomataku.jp', password: 'Tomataku0427#' }, // Airwork用認証情報
-    { username: 'hraim@tomataku.jp', password: 'password123' },   // Engage用認証情報
-    { username: 't.oouchi@yokohamamusen.co.jp', password: 'yk7537623' }  // 新規認証情報
+    { username: 'kido@tomataku.jp', password: 'Tomataku0427#', service: 'airwork' }, // Airwork用認証情報
+    { username: 'hraim@tomataku.jp', password: 'password123', service: 'engage' },   // Engage用認証情報
+    { username: 't.oouchi@yokohamamusen.co.jp', password: 'yk7537623', service: 'engage' }  // 新規認証情報
   ];
   
   console.log('✅ 有効な認証情報リスト:', validCredentials.map(c => c.username).join(', '));
@@ -108,11 +109,13 @@ const simpleAuthCheck = async (username, password) => {
   
   if (matchedCredential) {
     console.log('🎉 認証情報が一致しました:', matchedCredential.username);
+    // サービスタイプは明示的に指定されたものを優先、ない場合は資格情報のデフォルト値を使用
+    const service = serviceType || matchedCredential.service || 'unknown';
     return {
       success: true,
       message: '簡易認証に成功しました',
       envInfo: getEnvInfo(),
-      service: matchedCredential.username.includes('yokohamamusen') || matchedCredential.username.includes('hraim') ? 'engage' : 'airwork'
+      service: service
     };
   } else {
     console.log('❌ 認証情報が一致しませんでした');
@@ -278,6 +281,12 @@ exports.handler = async (event, context) => {
     let requestBody;
     try {
       requestBody = JSON.parse(event.body);
+      console.log('📝 リクエスト内容:', {
+        username: requestBody.username,
+        hasPassword: !!requestBody.password,
+        forceSimpleAuth: requestBody.forceSimpleAuth,
+        serviceType: requestBody.serviceType
+      });
     } catch (error) {
       return generateErrorResponse('リクエストボディの解析に失敗しました', 400);
     }
@@ -287,17 +296,17 @@ exports.handler = async (event, context) => {
       return generateErrorResponse('username, passwordは必須パラメータです', 400);
     }
     
-    const { username, password } = requestBody;
-    const xpathToCheck = requestBody.xpath || "//a[contains(@class, 'logout')]";
+    const { username, password, serviceType } = requestBody;
     
     // 強制的に簡易認証モードを使用するかどうか
-    if (requestBody.forceSimpleAuth) {
+    if (requestBody.forceSimpleAuth || isLocal || process.env.NETLIFY) {
       console.log('⚠️ 強制的に簡易認証モードを使用します');
-      const authResult = await simpleAuthCheck(username, password);
+      const authResult = await simpleAuthCheck(username, password, serviceType);
       
       if (authResult.success) {
         return generateSuccessResponse('強制簡易認証に成功しました', {
-          envInfo: authResult.envInfo
+          envInfo: authResult.envInfo,
+          service: authResult.service
         });
       } else {
         return generateErrorResponse(authResult.message, 401, {
@@ -308,7 +317,7 @@ exports.handler = async (event, context) => {
     
     // 認証チェックを実行
     console.log(`🔒 ${username}の認証を開始します...`);
-    const authResult = await checkAuthentication(username, password, xpathToCheck);
+    const authResult = await checkAuthentication(username, password, "//a[contains(@class, 'logout')]");
     
     if (authResult.success) {
       return generateSuccessResponse('認証に成功しました', {
