@@ -71,7 +71,8 @@ const simpleAuthCheck = async (username, password) => {
   // 許可されたユーザーとパスワードの組み合わせを確認
   const validCredentials = [
     { username: 'kido@tomataku.jp', password: 'Tomataku0427#' }, // Airwork用認証情報
-    { username: 'hraim@tomataku.jp', password: 'password123' }   // Engage用認証情報
+    { username: 'hraim@tomataku.jp', password: 'password123' },   // Engage用認証情報
+    { username: 't.oouchi@yokohamamusen.co.jp', password: 'yk7537623' }  // 新規認証情報
   ];
   
   // ユーザー名とパスワードが一致するかチェック
@@ -84,7 +85,7 @@ const simpleAuthCheck = async (username, password) => {
       success: true,
       message: '簡易認証に成功しました',
       envInfo: getEnvInfo(),
-      service: matchedCredential.username.includes('hraim') ? 'engage' : 'airwork'
+      service: matchedCredential.username.includes('yokohamamusen') || matchedCredential.username.includes('hraim') ? 'engage' : 'airwork'
     };
   } else {
     return {
