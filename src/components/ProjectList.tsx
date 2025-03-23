@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Clock, CheckCircle, XCircle, AlertCircle, Eye, Plus, Search, Calendar, Edit, CreditCard } from 'lucide-react';
+import { FileText, Clock, CheckCircle, XCircle, AlertCircle, Eye, Plus, Search, Calendar, Edit, CreditCard, Warehouse } from 'lucide-react';
 import type { Campaign } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import CampaignForm from './campaign/CampaignForm';
+import CampaignLog from './campaign/CampaignLog';
 
 interface ProjectListProps {
   userType: 'agency' | 'client';
@@ -17,6 +18,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [viewCampaignLog, setViewCampaignLog] = useState<Campaign | null>(null);
   const [showNewCampaignForm, setShowNewCampaignForm] = useState(false);
   const itemsPerPage = 50;
 
@@ -57,12 +59,12 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
         campaign.customers?.company_name?.toLowerCase().includes(searchLower)
       );
     });
-    
+
     // Sort filtered campaigns by created_at in descending order
-    const sorted = [...filtered].sort((a, b) => 
+    const sorted = [...filtered].sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-    
+
     setFilteredCampaigns(sorted);
     setCurrentPage(1);
   }, [searchTerm, campaigns]);
@@ -270,6 +272,13 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
                 </div>
                 <div className="flex items-center">
                   <button
+                    onClick={() => setViewCampaignLog(campaign)}
+                    className="text-gray-400 hover:text-gray-500 p-2"
+                  >
+                    <span className="sr-only">編集</span>
+                    <Warehouse className="h-5 w-5" />
+                  </button>
+                  <button
                     onClick={() => setEditingCampaign(campaign)}
                     className="text-gray-400 hover:text-gray-500 p-2"
                   >
@@ -371,6 +380,12 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
             setShowNewCampaignForm(false);
           }}
           onSave={handleCampaignSave}
+        />
+      )}
+      {viewCampaignLog && (
+        <CampaignLog
+          campaign={viewCampaignLog}
+          onClose={() => setViewCampaignLog(null)}
         />
       )}
     </div>

@@ -143,7 +143,7 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
       }
 
       const result = platform === 'airwork'
-        ? await checkAirworkAuth(selectedCustomer.id)
+        ? await checkAirworkAuth(selectedCustomer.airwork_login?.username, selectedCustomer.airwork_login?.password)
         : await checkEngageAuth(selectedCustomer.id);
 
       // Update customer with new auth status

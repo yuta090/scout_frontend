@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { UserMetadata, Profile, Customer, Campaign, Activity } from './types';
+import type { UserMetadata, Profile, Customer, Campaign, Activity, CampaignLog } from './types';
 
 // Get environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -40,23 +40,23 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const handleSupabaseError = async (error: any, retryCount = 0): Promise<never> => {
   console.error('Supabase error:', error);
-  
+
   // Network errors with retry logic
   if (error.message === 'Failed to fetch' && retryCount < MAX_RETRIES) {
     await wait(RETRY_DELAY * Math.pow(2, retryCount));
     return handleSupabaseError(error, retryCount + 1);
   }
-  
+
   // Network errors
   if (error.message === 'Failed to fetch') {
     throw new Error('ネットワークエラー: Supabaseとの接続に失敗しました。インターネット接続を確認してください。');
   }
-  
+
   // Database errors
   if (error.code === 'PGRST301') {
     throw new Error('データベースエラー: Supabaseの設定を確認してください。');
   }
-  
+
   // Authentication errors
   if (error.code === 'AUTH_INVALID_CREDENTIALS') {
     throw new Error('認証エラー: メールアドレスまたはパスワードが正しくありません。');
@@ -217,6 +217,32 @@ export const updateCustomer = async (id: string, updates: Partial<Customer>) => 
   }
 };
 
+export const getCampaignLogs = async (campaign_id: string) => {
+  try {
+    let campaign_id = "a65fd2f8-414e-4c24-bf43-c45f09f8b7e9"
+    const { data, error } = await executeWithRetry(() =>
+      supabase
+        .from('campaign_results')
+        .select(`
+          id,
+          campaign_id,
+          details,
+          created_at
+        `)
+        .eq('campaign_id', campaign_id)
+        .order('created_at', { ascending: true })
+    );
+    if (error) throw error;
+
+    return data.map(log => ({
+      ...log
+    })) as CampaignLog[];
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    throw error;
+  }
+}
+
 export const getCustomers = async (agencyId: string) => {
   try {
     const { data, error } = await executeWithRetry(() =>
@@ -251,8 +277,8 @@ export const checkAirworkAuth = async (username: string, password: string): Prom
   try {
     // Basic validation
     if (!username || !password) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         message: 'ログイン情報が設定されていません'
       };
     }
@@ -272,39 +298,35 @@ export const checkAirworkAuth = async (username: string, password: string): Prom
     }
 
     try {
-      // Call the server-side function to check authentication
-      const { data, error } = await supabase.functions.invoke('check-airwork-auth', {
-        body: {
-          username,
-          password
-        }
+      const response = await fetch('/api/checkauth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
       });
 
-      if (error) throw error;
-
-      if (!data?.success) {
+      const data = await response.json();
+      console.log(data)
+      if (data.status === 'success') {
+        return {
+          success: true,
+          message: '認証に成功しました'
+        };
+      } else {
         return {
           success: false,
           message: data?.message || 'ログインに失敗しました。認証情報を確認してください。'
         };
       }
-
-      return {
-        success: true,
-        message: '認証に成功しました'
-      };
-
     } catch (error) {
-      console.error('Error invoking auth check function:', error);
       return {
         success: false,
-        message: '認証サービスとの通信に失敗しました'
+        message: 'サーバーエラーが発生しました'
       };
     }
   } catch (error) {
     console.error('Error checking Airwork authentication:', error);
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: error instanceof Error ? error.message : '認証チェック中にエラーが発生しました'
     };
   }
@@ -314,9 +336,9 @@ export const checkEngageAuth = async (customerId: string): Promise<{ success: bo
   try {
     // For now, simulate a random result for Engage
     const success = Math.random() > 0.3;
-    
-    return { 
-      success, 
+
+    return {
+      success,
       message: success ? '認証に成功しました' : '認証に失敗しました。認証情報を確認してください。'
     };
   } catch (error) {
@@ -329,22 +351,22 @@ export const checkEngageAuth = async (customerId: string): Promise<{ success: bo
 };
 
 export const updateAuthStatus = async (
-  customerId: string, 
-  platform: 'airwork' | 'engage', 
+  customerId: string,
+  platform: 'airwork' | 'engage',
   status: 'pending' | 'authenticated' | 'failed'
 ) => {
   try {
-    const updateData = platform === 'airwork' 
+    const updateData = platform === 'airwork'
       ? { airwork_auth_status: status }
       : { engage_auth_status: status };
-      
+
     const { data, error } = await supabase
       .from('customers')
       .update(updateData)
       .eq('id', customerId)
       .select()
       .single();
-      
+
     if (error) throw error;
     return data;
   } catch (error) {
@@ -393,4 +415,4 @@ export const logActivity = async (userId: string, action: string, details: any) 
 };
 
 // Re-export types
-export type { UserMetadata, Profile, Customer, Campaign, Activity };
+export type { UserMetadata, Profile, Customer, Campaign, Activity, CampaignLog };

@@ -17,6 +17,13 @@ export interface Profile {
   updated_at: string;
 }
 
+export interface CampaignLog {
+  id: string;
+  campaign_id: string;
+  details: string;
+  created_at: string;
+}
+
 export interface Customer {
   id: string;
   agency_id: string;
