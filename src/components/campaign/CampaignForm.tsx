@@ -303,32 +303,25 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
 
       if (createdData && createdData.length > 0) {
         const campaignId = createdData[0].id;
-        console.log(jobTypes)
+
         deliveryDates.forEach(async (date) => {
-          jobTypes.forEach(async (jt) => {
-            const scheduleData = {
-              campaign_id: campaignId,
-              date: date.date,
-              time: date.time,
-              sent: false,
-              job_title: jt.name,
-              quantity: jt.quantity,
-              location: jt.locations,
-              current_scout: 1
-            };
+          const scheduleData = {
+            campaign_id: campaignId,
+            date: date.date,
+            time: date.time,
+            sent: false,
+          };
 
+          const { error: scheduleError } = await supabase
+            .from("campaign_schedules")
+            .insert([scheduleData]);
 
-            const { error: scheduleError } = await supabase
-              .from("campaign_schedules")
-              .insert([scheduleData]);
-
-            if (scheduleError) {
-              console.error("Error inserting schedule:", scheduleError);
-            } else {
-              console.log("Inserted schedule:", scheduleData);
-            }
-          });
-        })
+          if (scheduleError) {
+            console.error("Error inserting schedule:", scheduleError);
+          } else {
+            console.log("Inserted schedule:", scheduleData);
+          }
+        });
       }
 
       setSuccessMessage(isDraft ? 'スカウト依頼を下書き保存しました' : 'スカウト依頼を作成しました');
