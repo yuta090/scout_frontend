@@ -75,7 +75,7 @@ const AirworkAuthSection: React.FC<AirworkAuthSectionProps> = ({
         </h3>
         {getStatusDisplay()}
       </div>
-      
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="airwork_username" className="block text-sm font-medium text-gray-700 mb-1">
