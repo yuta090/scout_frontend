@@ -85,26 +85,26 @@
 </head>
 <body>
   <h1>Airwork認証チェック</h1>
-  
+
   <div class="form-container">
     <div class="form-group">
       <label for="username">ユーザー名</label>
       <input type="text" id="username" placeholder="Airworkのユーザー名/メールアドレスを入力">
     </div>
-    
+
     <div class="form-group">
       <label for="password">パスワード</label>
       <input type="password" id="password" placeholder="Airworkのパスワードを入力">
     </div>
-    
+
     <button id="checkAuth">認証チェック</button>
   </div>
-  
+
   <div class="loading" id="loading">
     <div class="spinner"></div>
     <p>認証チェック中...</p>
   </div>
-  
+
   <div class="result" id="resultContainer">
     <h3 id="resultTitle">結果</h3>
     <p id="resultMessage"></p>
@@ -121,20 +121,20 @@
       const resultMessage = document.getElementById('resultMessage');
       const resultDetails = document.getElementById('resultDetails');
       const loading = document.getElementById('loading');
-      
+
       checkAuthBtn.addEventListener('click', async function() {
         const username = usernameInput.value.trim();
         const password = passwordInput.value.trim();
-        
+
         if (!username || !password) {
           alert('ユーザー名とパスワードを入力してください');
           return;
         }
-        
+
         // ローディング表示
         loading.style.display = 'block';
         resultContainer.style.display = 'none';
-        
+
         try {
           // Netlify Functionを呼び出す
           const response = await fetch('/.netlify/functions/check-airwork-auth', {
@@ -144,9 +144,9 @@
             },
             body: JSON.stringify({ username, password })
           });
-          
+
           const data = await response.json();
-          
+
           // 結果を表示
           if (data.success) {
             resultContainer.className = 'result success';
@@ -155,9 +155,9 @@
             resultContainer.className = 'result error';
             resultTitle.textContent = '認証失敗';
           }
-          
+
           resultMessage.textContent = data.message || '結果が返されませんでした';
-          
+
           if (data.details) {
             resultDetails.innerHTML = `
               <p><strong>ステータス:</strong> ${data.details.status || 'N/A'}</p>
@@ -168,7 +168,7 @@
           } else {
             resultDetails.innerHTML = '';
           }
-          
+
           resultContainer.style.display = 'block';
         } catch (error) {
           console.error('エラー:', error);

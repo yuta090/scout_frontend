@@ -81,7 +81,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
   const handleAuthCheck = async (platform: 'airwork' | 'engage') => {
     setCheckingAuth({ platform });
     setError(null);
-    
+
     try {
       // Check if credentials exist
       const credentials = platform === 'airwork' ? formData.airwork_login : formData.engage_login;
@@ -95,7 +95,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
       }
 
       // Get the base URL for Netlify Functions
-      const baseUrl = import.meta.env.PROD 
+      const baseUrl = import.meta.env.PROD
         ? window.location.origin
         : 'http://localhost:8888';
 
@@ -116,7 +116,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
       }
 
       const { success, message } = await response.json();
-      
+
       setFormData(prev => ({
         ...prev,
         [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']: success ? 'authenticated' : 'failed'
@@ -272,7 +272,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
               <label className="block text-lg font-medium text-gray-700">
                 Airワーク認証情報
               </label>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="airwork_username" className="block text-sm font-medium text-gray-700 mb-1">
@@ -307,7 +307,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
                   />
                 </div>
               </div>
-              
+
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center">
                   <span className="text-sm font-medium text-gray-700 mr-2">認証状態:</span>
@@ -318,7 +318,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
                     </span>
                   </div>
                 </div>
-                
+
                 <button
                   type="button"
                   onClick={() => handleAuthCheck('airwork')}
@@ -341,7 +341,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
                   )}
                 </button>
               </div>
-              
+
               {!formData.airwork_login.username || !formData.airwork_login.password ? (
                 <p className="text-xs text-amber-600 mt-1">
                   認証チェックを行うには、ユーザー名とパスワードを入力してください。
@@ -353,7 +353,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
               <label className="block text-lg font-medium text-gray-700">
                 Engage認証情報
               </label>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="engage_username" className="block text-sm font-medium text-gray-700 mb-1">
@@ -388,7 +388,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
                   />
                 </div>
               </div>
-              
+
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center">
                   <span className="text-sm font-medium text-gray-700 mr-2">認証状態:</span>
@@ -399,7 +399,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
                     </span>
                   </div>
                 </div>
-                
+
                 <button
                   type="button"
                   onClick={() => handleAuthCheck('engage')}
@@ -422,7 +422,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customer, onSubmit, onCance
                   )}
                 </button>
               </div>
-              
+
               {!formData.engage_login.username || !formData.engage_login.password ? (
                 <p className="text-xs text-amber-600 mt-1">
                   認証チェックを行うには、ユーザー名とパスワードを入力してください。

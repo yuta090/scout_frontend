@@ -27,13 +27,13 @@ const App: React.FC = () => {
                 </h1>
               </div>
               <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-                <LoginPortal 
+                <LoginPortal
                   type="agency"
                   title="代理店ポータル"
                   description="代理店様専用のログインポータルです"
                   icon={Building2}
                 />
-                <LoginPortal 
+                <LoginPortal
                   type="client"
                   title="クライアントポータル"
                   description="クライアント様専用のログインポータルです"

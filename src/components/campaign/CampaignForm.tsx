@@ -10,7 +10,7 @@ import FloatingErrorSummary from './components/FloatingErrorSummary';
 import CampaignPreview from './CampaignPreview';
 import { DeliveryDays } from './types';
 import { useFormValidation } from './hooks/useFormValidation';
-import { calculateTotalPrice, calculateDeliveryDaysInPeriod } from './utils';
+import { calculateTotalPrice, calculateDeliveryDaysInPeriod, getDeliveryDates } from './utils';
 
 interface CampaignFormProps {
   customerId?: string;
@@ -103,21 +103,64 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
     deliveryDays
   });
 
+  const validateAirworkCredentials = (username?: string, password?: string): string | null => {
+    if (!username || !password) {
+      return 'ユーザー名とパスワードを入力してください';
+    }
+
+    if (username.length < 4) {
+      return 'ユーザー名は4文字以上で入力してください';
+    }
+
+    if (password.length < 8) {
+      return 'パスワードは8文字以上で入力してください';
+    }
+
+    return null;
+  };
+
   const handleAuthCheck = async (platform: 'airwork' | 'engage') => {
     if (!selectedCustomer) return;
-    
+
     setCheckingAuth({ platform });
-    
+    setErrors({});
+
     try {
-      const result = platform === 'airwork' 
-        ? await checkAirworkAuth(selectedCustomer.id)
+      if (platform === 'airwork') {
+        const validationError = validateAirworkCredentials(
+          selectedCustomer.airwork_login?.username,
+          selectedCustomer.airwork_login?.password
+        );
+
+        if (validationError) {
+          setErrors(prev => ({
+            ...prev,
+            auth: [validationError]
+          }));
+          setCheckingAuth(null);
+          return;
+        }
+      }
+
+      const result = platform === 'airwork'
+        ? await checkAirworkAuth(selectedCustomer.airwork_login?.username, selectedCustomer.airwork_login?.password)
         : await checkEngageAuth(selectedCustomer.id);
+
+      // Update customer with new auth status
+      const { error: updateError } = await supabase
+        .from('customers')
+        .update({
+          [`${platform}_auth_status`]: result.success ? 'authenticated' : 'failed'
+        })
+        .eq('id', selectedCustomer.id);
+
+      if (updateError) throw updateError;
 
       setSelectedCustomer(prev => {
         if (!prev) return null;
         return {
           ...prev,
-          [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']: 
+          [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']:
             result.success ? 'authenticated' : 'failed'
         };
       });
@@ -125,7 +168,7 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
       if (!result.success) {
         setErrors(prev => ({
           ...prev,
-          auth: [`${platform === 'airwork' ? 'AirWork' : 'Engage'}の認証に失敗しました`]
+          auth: [result.message || `${platform === 'airwork' ? 'AirWork' : 'Engage'}の認証に失敗しました`]
         }));
       }
     } catch (error) {
@@ -134,6 +177,26 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
         ...prev,
         auth: [`${platform === 'airwork' ? 'AirWork' : 'Engage'}の認証中にエラーが発生しました`]
       }));
+
+      // Update customer with failed auth status
+      try {
+        await supabase
+          .from('customers')
+          .update({
+            [`${platform}_auth_status`]: 'failed'
+          })
+          .eq('id', selectedCustomer.id);
+
+        setSelectedCustomer(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']: 'failed'
+          };
+        });
+      } catch (updateError) {
+        console.error('Error updating auth status:', updateError);
+      }
     } finally {
       setCheckingAuth(null);
     }
@@ -141,7 +204,6 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
 
   const isAuthValid = () => {
     if (!selectedCustomer || !selectedPlatform) return false;
-    
     if (selectedPlatform === 'airwork') {
       return selectedCustomer.airwork_auth_status === 'authenticated';
     } else {
@@ -197,11 +259,12 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
       if (!user) throw new Error('認証エラー');
 
       const deliveryDaysCount = calculateDeliveryDaysInPeriod(startDate, endDate, deliveryDays);
-      
-      const dailyQuantity = jobTypes.reduce((sum, job) => sum + job.quantity, 0);
-      
-      const totalQuantity = dailyQuantity * deliveryDaysCount;
 
+      const deliveryDates = getDeliveryDates(startDate, endDate, deliveryDays);
+
+      const dailyQuantity = jobTypes.reduce((sum, job) => sum + job.quantity, 0);
+
+      const totalQuantity = dailyQuantity * deliveryDaysCount;
       const campaignData = {
         customer_id: selectedCustomer?.id,
         agency_id: user.id,
@@ -216,7 +279,7 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
           quantity: jobTypes.map(jt => jt.quantity)
         },
         quantity: totalQuantity,
-        status: isDraft ? 'draft' : 'requested',
+        status: isDraft ? 'draft' : 'pending',
         options: {
           schedule: {
             start_date: startDate,
@@ -230,14 +293,45 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
         search_criteria: jobTypes[0].search_criteria
       };
 
-      const { error: saveError } = await supabase
-        .from('campaigns')
-        .insert([campaignData]);
+      const { data: createdData, error: saveError } = await supabase
+        .from("campaigns")
+        .insert([campaignData])
+        .select("id");
 
       if (saveError) throw saveError;
 
+      if (createdData && createdData.length > 0) {
+        const campaignId = createdData[0].id;
+        console.log(jobTypes)
+        deliveryDates.forEach(async (date) => {
+          jobTypes.forEach(async (jt) => {
+            const scheduleData = {
+              campaign_id: campaignId,
+              date: date.date,
+              time: date.time,
+              sent: false,
+              job_title: jt.name,
+              quantity: jt.quantity,
+              location: jt.locations,
+              current_scout: 1
+            };
+
+
+            const { error: scheduleError } = await supabase
+              .from("campaign_schedules")
+              .insert([scheduleData]);
+
+            if (scheduleError) {
+              console.error("Error inserting schedule:", scheduleError);
+            } else {
+              console.log("Inserted schedule:", scheduleData);
+            }
+          });
+        })
+      }
+
       setSuccessMessage(isDraft ? 'スカウト依頼を下書き保存しました' : 'スカウト依頼を作成しました');
-      
+
       if (onSave) {
         onSave();
       }
@@ -329,44 +423,48 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
                     </h3>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          ユーザー名
-                        </label>
-                        <input
-                          type="text"
-                          value={selectedCustomer[selectedPlatform === 'airwork' ? 'airwork_login' : 'engage_login']?.username || ''}
-                          onChange={(e) => setSelectedCustomer({
-                            ...selectedCustomer,
-                            [selectedPlatform === 'airwork' ? 'airwork_login' : 'engage_login']: {
-                              ...selectedCustomer[selectedPlatform === 'airwork' ? 'airwork_login' : 'engage_login'],
-                              username: e.target.value
-                            }
-                          })}
-                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          パスワード
-                        </label>
-                        <input
-                          type="password"
-                          value={selectedCustomer[selectedPlatform === 'airwork' ? 'airwork_login' : 'engage_login']?.password || ''}
-                          onChange={(e) => setSelectedCustomer({
-                            ...selectedCustomer,
-                            [selectedPlatform === 'airwork' ? 'airwork_login' : 'engage_login']: {
-                              ...selectedCustomer[selectedPlatform === 'airwork' ? 'airwork_login' : 'engage_login'],
-                              password: e.target.value
-                            }
-                          })}
-                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        />
+                  {selectedPlatform === 'airwork' && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            ユーザー名
+                          </label>
+                          <input
+                            type="text"
+                            value={selectedCustomer.airwork_login?.username || ''}
+                            onChange={(e) => setSelectedCustomer({
+                              ...selectedCustomer,
+                              airwork_login: {
+                                ...selectedCustomer.airwork_login,
+                                username: e.target.value
+                              }
+                            })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            placeholder="4文字以上で入力"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            パスワード
+                          </label>
+                          <input
+                            type="password"
+                            value={selectedCustomer.airwork_login?.password || ''}
+                            onChange={(e) => setSelectedCustomer({
+                              ...selectedCustomer,
+                              airwork_login: {
+                                ...selectedCustomer.airwork_login,
+                                password: e.target.value
+                              }
+                            })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            placeholder="8文字以上で入力"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <button
                     onClick={() => handleAuthCheck(selectedPlatform)}

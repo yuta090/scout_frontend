@@ -11,7 +11,14 @@ export default defineConfig({
     host: true,
     hmr: {
       overlay: false
-    }
+    },
+    proxy: {
+      '/api': {
+        target: 'https://airworklogincheck-5a3b45eea059.herokuapp.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
   },
   build: {
     rollupOptions: {

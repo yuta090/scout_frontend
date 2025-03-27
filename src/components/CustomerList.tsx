@@ -79,28 +79,28 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, onEdit, onDelete
 
   const handleAuthCheck = async (customer: Customer, platform: 'airwork' | 'engage') => {
     setCheckingAuth({id: customer.id, platform});
-    
+
     try {
-      const result = platform === 'airwork' 
+      const result = platform === 'airwork'
         ? await checkAirworkAuth(customer.id)
         : await checkEngageAuth(customer.id);
-      
+
       // Update the customer in the original array (for UI updates)
       const customerIndex = customers.findIndex(c => c.id === customer.id);
       if (customerIndex !== -1) {
         customers[customerIndex] = {
           ...customers[customerIndex],
-          [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']: 
+          [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']:
             result.success ? 'authenticated' : 'failed'
         };
       }
-      
+
       if (!result.success) {
         console.warn(`Authentication failed: ${result.message}`);
       }
     } catch (error) {
       console.error(`Error checking ${platform} authentication:`, error);
-      
+
       const customerIndex = customers.findIndex(c => c.id === customer.id);
       if (customerIndex !== -1) {
         customers[customerIndex] = {
@@ -115,49 +115,49 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, onEdit, onDelete
 
   const handleCheckAllAuth = async () => {
     setCheckingAllAuth(true);
-    
+
     try {
       const authChecksNeeded: { customer: Customer, platform: 'airwork' | 'engage' }[] = [];
-      
+
       for (const customer of customers) {
         if (customer.airwork_auth_status !== 'authenticated') {
           authChecksNeeded.push({ customer, platform: 'airwork' });
         }
-        
+
         if (customer.engage_auth_status !== 'authenticated') {
           authChecksNeeded.push({ customer, platform: 'engage' });
         }
       }
-      
-      setCheckProgress({ 
-        current: 0, 
+
+      setCheckProgress({
+        current: 0,
         total: authChecksNeeded.length,
         message: '認証チェックを開始します...'
       });
-      
+
       for (let i = 0; i < authChecksNeeded.length; i++) {
         const { customer, platform } = authChecksNeeded[i];
-        
-        setCheckProgress({ 
-          current: i + 1, 
+
+        setCheckProgress({
+          current: i + 1,
           total: authChecksNeeded.length,
           message: `${customer.company_name}の${platform === 'airwork' ? 'AirWork' : 'Engage'}認証をチェック中...`
         });
-        
+
         await handleAuthCheck(customer, platform);
         await new Promise(resolve => setTimeout(resolve, 500));
       }
-      
-      setCheckProgress({ 
-        current: authChecksNeeded.length, 
+
+      setCheckProgress({
+        current: authChecksNeeded.length,
         total: authChecksNeeded.length,
         message: '全ての認証チェックが完了しました'
       });
-      
+
       setTimeout(() => {
         setCheckProgress({ current: 0, total: 0, message: '' });
       }, 2000);
-      
+
     } finally {
       setCheckingAllAuth(false);
     }
@@ -236,8 +236,8 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, onEdit, onDelete
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-indigo-600 h-2 rounded-full transition-all duration-300 ease-in-out" 
+                <div
+                  className="bg-indigo-600 h-2 rounded-full transition-all duration-300 ease-in-out"
                   style={{ width: `${(checkProgress.current / checkProgress.total) * 100}%` }}
                 ></div>
               </div>
@@ -245,7 +245,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, onEdit, onDelete
           </div>
         </div>
       )}
-
       <div className="border-t border-gray-200">
         <ul className="divide-y divide-gray-200">
           {filteredCustomers.map((customer) => (
@@ -316,7 +315,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, onEdit, onDelete
                         </button>
                       )}
                     </div>
-                    
+
                     {/* Engage Auth Status */}
                     <div className="flex items-center ml-4">
                       <span className="text-sm text-gray-500 mr-1">Engage:</span>
@@ -354,7 +353,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, onEdit, onDelete
                       )}
                     </div>
                   </div>
-                  
+
                   {customer.phone && (
                     <div className="flex items-center text-gray-500">
                       <Phone className="h-5 w-5 mr-1" />

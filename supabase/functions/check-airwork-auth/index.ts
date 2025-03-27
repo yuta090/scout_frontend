@@ -1,224 +1,130 @@
+// @ts-ignore
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import puppeteer from "https://deno.land/x/puppeteer@16.2.0/mod.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-interface AuthResponse {
-  success: boolean;
-  message: string;
-  details: {
-    status: 'success' | 'error' | 'network_error' | 'invalid_credentials' | 'account_locked' | 'maintenance';
-    code: string;
-    timestamp: string;
-    attempts?: number;
-    nextAttemptAt?: string;
-    maintenanceEndAt?: string;
-    error?: string;
-  };
-}
+console.log("AirWork認証チェック関数を開始");
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+
+  // OPTIONSリクエストの処理
+  if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const logs: Array<{
+    timestamp: string;
+    message: string;
+    data?: any;
+    error?: string;
+  }> = [];
+
+  const addLog = (message: string, data?: any, error?: string) => {
+    logs.push({
+      timestamp: new Date().toISOString(),
+      message,
+      ...(data && { data }),
+      ...(error && { error })
+    });
+  };
+
   try {
-    // Parse request body
+    addLog("認証リクエストを受信");
+
+    // リクエストボディの解析
     const { username, password } = await req.json();
 
-    // Validate input
+    // 入力値の検証
     if (!username || !password) {
-      const response: AuthResponse = {
-        success: false,
-        message: "ログイン情報が不足しています",
-        details: {
-          status: 'error',
-          code: 'MISSING_CREDENTIALS',
-          timestamp: new Date().toISOString()
-        }
-      };
-
-      return new Response(
-        JSON.stringify(response),
-        { 
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json'
-          },
-          status: 400
-        }
-      );
+      addLog("必須パラメータが不足", { username: !!username, password: !!password });
+      throw new Error("ユーザー名とパスワードは必須です");
     }
 
+    if (username.length < 4) {
+      addLog("ユーザー名が短すぎる", { length: username.length });
+      throw new Error("ユーザー名は4文字以上で入力してください");
+    }
+
+    if (password.length < 8) {
+      addLog("パスワードが短すぎる", { length: password.length });
+      throw new Error("パスワードは8文字以上で入力してください");
+    }
+
+    addLog("認証情報の検証に成功");
+
+    // Puppeteerの起動
+    addLog("ブラウザを起動");
+    const browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
     try {
-      console.log(`認証試行: ユーザー名 ${username} (${new Date().toISOString()})`);
-      
-      // Make a direct HTTP request to AirWork login API with more detailed error handling
-      const timeoutMs = 15000; // 15秒タイムアウト設定
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      
-      console.log(`AirWork APIへリクエスト送信を開始...`);
-      
-      const response = await fetch('https://ats.rct.airwork.net/airplf/api/v1/auth/login', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-        },
-        body: JSON.stringify({
-          account: username,
-          password: password,
-          remember: false
-        })
-      }).finally(() => {
-        clearTimeout(timeoutId);
+      const page = await browser.newPage();
+      addLog("新規ページを作成");
+
+      // AirWorkのログインページにアクセス
+      await page.goto("https://ats.rct.airwork.jp/airplf/login");
+      addLog("ログインページにアクセス");
+
+      // ユーザー名とパスワードを入力
+      await page.type("#loginId", username);
+      await page.type("#password", password);
+      addLog("認証情報を入力");
+
+      // ログインボタンをクリック
+      await page.click("button[type='submit']");
+      addLog("ログインボタンをクリック");
+
+      // ログイン後のページ遷移を待機
+      await page.waitForNavigation();
+      addLog("ページ遷移を待機");
+
+      // ログイン成功の確認
+      const isLoggedIn = await page.evaluate(() => {
+        return document.querySelector(".user-name") !== null;
       });
-      
-      console.log(`AirWork APIからのレスポンス: ステータス ${response.status}`);
-      
-      // レスポンスボディの取得
-      let data;
-      try {
-        data = await response.json();
-      } catch (jsonError) {
-        console.error('APIレスポンスのJSON解析エラー:', jsonError);
-        data = { message: 'レスポンスの解析に失敗しました' };
-      }
 
-      if (!response.ok) {
-        console.log(`認証失敗: ${data.message || "不明なエラー"}`);
-        
-        const authResponse: AuthResponse = {
-          success: false,
-          message: data.message || "認証に失敗しました",
-          details: {
-            status: 'error',
-            code: 'AUTH_FAILED',
-            timestamp: new Date().toISOString()
-          }
-        };
-
-        // エラーの種類に応じて詳細情報を設定
-        if (response.status === 401) {
-          authResponse.details.status = 'invalid_credentials';
-          authResponse.details.code = 'INVALID_CREDENTIALS';
-        } else if (response.status === 429) {
-          authResponse.details.status = 'error';
-          authResponse.details.code = 'RATE_LIMIT';
-          authResponse.details.attempts = data.attempts;
-          authResponse.details.nextAttemptAt = data.nextAttemptAt;
-        } else if (response.status === 423) {
-          authResponse.details.status = 'account_locked';
-          authResponse.details.code = 'ACCOUNT_LOCKED';
-          authResponse.details.nextAttemptAt = data.nextAttemptAt;
-        } else if (response.status === 503) {
-          authResponse.details.status = 'maintenance';
-          authResponse.details.code = 'MAINTENANCE';
-          authResponse.details.maintenanceEndAt = data.maintenanceEndAt;
-        }
-
-        return new Response(
-          JSON.stringify(authResponse),
-          { 
-            headers: {
-              ...corsHeaders,
-              'Content-Type': 'application/json'
-            },
-            status: response.status
-          }
-        );
-      }
-
-      console.log(`認証成功: ユーザー ${username}`);
-      
-      const authResponse: AuthResponse = {
-        success: true,
-        message: "認証に成功しました",
-        details: {
-          status: 'success',
-          code: 'AUTH_SUCCESS',
-          timestamp: new Date().toISOString()
-        }
-      };
+      addLog(isLoggedIn ? "ログイン成功" : "ログイン失敗", { isLoggedIn });
 
       return new Response(
-        JSON.stringify(authResponse),
-        { 
+        JSON.stringify({
+          success: isLoggedIn,
+          message: isLoggedIn ? "認証に成功しました" : "認証に失敗しました。認証情報を確認してください。",
+          logs
+        }),
+        {
           headers: {
             ...corsHeaders,
-            'Content-Type': 'application/json'
-          },
-          status: 200
+            "Content-Type": "application/json"
+          }
         }
       );
 
-    } catch (error) {
-      // エラーの詳細な情報をログに記録
-      console.error('Error making auth request:', error);
-      console.error('Error type:', typeof error);
-      console.error('Error name:', error instanceof Error ? error.name : 'NotError');
-      console.error('Error message:', error instanceof Error ? error.message : String(error));
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-
-      // エラーレスポンスを作成（throwではなく直接レスポンスを返す）
-      const response: AuthResponse = {
-        success: false,
-        message: '認証サーバーへの接続に失敗しました',
-        details: {
-          status: 'network_error',
-          code: 'NETWORK_ERROR',
-          timestamp: new Date().toISOString(),
-          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-        }
-      };
-
-      // エラーをスローするのではなく、エラーレスポンスを返す
-      return new Response(
-        JSON.stringify(response),
-        { 
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json'
-          },
-          status: 500
-        }
-      );
+    } finally {
+      await browser.close();
+      addLog("ブラウザを終了");
     }
 
   } catch (error) {
-    console.error("Error in check-airwork-auth function:", error);
-    
-    let response: AuthResponse;
-    if (error && typeof error === 'object' && 'details' in error) {
-      response = error as AuthResponse;
-    } else {
-      response = {
-        success: false,
-        message: error instanceof Error ? error.message : "認証チェック中にエラーが発生しました",
-        details: {
-          status: 'error',
-          code: 'UNKNOWN_ERROR',
-          timestamp: new Date().toISOString(),
-          error: error instanceof Error ? error.stack : String(error)
-        }
-      };
-    }
+    console.error("認証エラー:", error);
+    addLog("エラーが発生", null, error instanceof Error ? error.message : "不明なエラー");
 
     return new Response(
-      JSON.stringify(response),
-      { 
+      JSON.stringify({
+        success: false,
+        message: error instanceof Error ? error.message : "認証チェック中にエラーが発生しました",
+        logs
+      }),
+      {
         headers: {
           ...corsHeaders,
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json"
         },
-        status: 500
+        status: 400
       }
     );
   }
