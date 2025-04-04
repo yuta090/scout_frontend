@@ -294,7 +294,7 @@ export const checkAirworkAuth = async (username: string, password: string): Prom
     }
 
     try {
-      const response = await fetch('/api/checkauth', {
+      const response = await fetch('https://airworklogincheck-5a3b45eea059.herokuapp.com/checkauth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
