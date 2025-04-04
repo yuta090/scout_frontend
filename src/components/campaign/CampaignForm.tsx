@@ -88,8 +88,8 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
       }
 
       if (campaign.job_details?.job_type) {
-        const jobTypeData = Array.isArray(campaign.job_details.job_type) 
-          ? campaign.job_details.job_type 
+        const jobTypeData = Array.isArray(campaign.job_details.job_type)
+          ? campaign.job_details.job_type
           : [campaign.job_details.job_type];
 
         const formattedJobTypes = jobTypeData.map((job, index) => ({
@@ -306,6 +306,12 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
         agency_id: user.id,
         title: formData.title || '無題のスカウト依頼',
         description: formData.description || '',
+        target_criteria: {
+          skills: jobTypes[0].search_criteria.skills,
+          age_range: jobTypes[0].age_range,
+          education: jobTypes[0].search_criteria.education,
+          experience_years: jobTypes[0].search_criteria.experience.max
+        },
         job_details: {
           platform: selectedPlatform,
           job_type: jobTypes.map(jt => ({
