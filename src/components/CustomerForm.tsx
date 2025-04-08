@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Shield, CheckCircle, AlertCircle, Clock } from 'lucide-react';
-import type { Customer } from '../lib/supabase';
+import { Customer } from '../lib/supabase';
+import {checkEngageAuth } from '../lib/supabase/auth';
 import { checkAirworkAuth } from '../lib/supabase';
 
 interface CustomerFormProps {
@@ -32,10 +33,11 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState<{platform: 'airwork' | 'engage'} | null>(null);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !initialized) {
       if (customer) {
         setFormData({
           agency_id: customer.agency_id,
@@ -49,8 +51,26 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           engage_auth_status: customer.engage_auth_status || 'pending',
           status: customer.status
         });
+      } else {
+        setFormData({
+          agency_id: '',
+          company_name: initialData.company_name || '',
+          contact_name: initialData.contact_name || '',
+          email: initialData.email || '',
+          phone: initialData.phone || '',
+          airwork_login: {},
+          engage_login: {},
+          airwork_auth_status: 'pending',
+          engage_auth_status: 'pending',
+          status: 'active'
+        });
       }
+      setInitialized(true);
       setError(null);
+    }
+
+    if (!isOpen && initialized) {
+      setInitialized(false);
     }
   }, [customer, initialData, isOpen]);
 
@@ -88,21 +108,39 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
         return;
       }
 
-      const response = await checkAirworkAuth(
-        credentials.username, credentials.password
-      )
+      // // Get the base URL for Netlify Functions
+      // const baseUrl = import.meta.env.PROD
+      //   ? window.location.origin
+      //   : 'http://localhost:5173';
 
+      // // Call the appropriate auth check function
+      // const response = await fetch(`${baseUrl}/api/.netlify/functions/check-${platform}-auth`, {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //   },
+      //   body: JSON.stringify({
+      //     username: credentials.username,
+      //     password: credentials.password
+      //   })
+      // });
+      const response = await checkAirworkAuth(
+        credentials.username,
+        credentials.password
+      );
       if (!response.success) {
         throw new Error(`HTTP error! status: ${response.message}`);
       }
 
+      const { success, message } = await response;
+
       setFormData(prev => ({
         ...prev,
-        [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']: response.success ? 'authenticated' : 'failed'
+        [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']: success ? 'authenticated' : 'failed'
       }));
 
-      if (!response.success) {
-        setError(response.message || '認証に失敗しました');
+      if (!success) {
+        setError(message || '認証に失敗しました');
       }
     } catch (error) {
       console.error(`Error checking ${platform} authentication:`, error);

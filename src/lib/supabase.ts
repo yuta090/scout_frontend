@@ -212,11 +212,9 @@ export const updateCustomer = async (id: string, updates: Partial<Customer>) => 
     throw error;
   }
 };
-
 export const getCampaignLogs = async (campaign_id: string) => {
   try {
-    let campaign_id = "a65fd2f8-414e-4c24-bf43-c45f09f8b7e9"
-    const { data, error } = await executeWithRetry(() =>
+    const { data: campaignResults, error: campaignError } = await executeWithRetry(() =>
       supabase
         .from('campaign_results')
         .select(`
@@ -228,16 +226,45 @@ export const getCampaignLogs = async (campaign_id: string) => {
         .eq('campaign_id', campaign_id)
         .order('created_at', { ascending: true })
     );
-    if (error) throw error;
+    if (campaignError) throw campaignError;
 
-    return data.map(log => ({
-      ...log
-    })) as CampaignLog[];
+    const { data: scoutResults, error: scoutError } = await executeWithRetry(() =>
+      supabase
+        .from('scout_results')
+        .select(`
+          campaign_id,
+          candidate_details
+        `)
+        .eq('campaign_id', campaign_id)
+    );
+    if (scoutError) throw scoutError;
+
+    return campaignResults.map(log => {
+      const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+
+      // Find matching scout result for this campaign_id
+      const scout = scoutResults.find(s => s.campaign_id === log.campaign_id);
+      const candidateDetails = scout?.candidate_details;
+
+      if (candidateDetails) {
+        // Push candidateDetails into success_msg
+        details.success_msg = [...(details.success_msg || []), candidateDetails];
+
+
+      }
+
+      return {
+        ...log,
+        details, // Updated details with success_msg appended
+      };
+    }) as CampaignLog[];
+
   } catch (error) {
-    console.error('Error fetching customers:', error);
+    console.error('Error fetching campaign logs:', error);
     throw error;
   }
 }
+
 
 export const getCustomers = async (agencyId: string) => {
   try {

@@ -94,7 +94,6 @@
 //   if (_browser) {
 //     return _browser;
 //   }
-
 //   try {
 //     // Netlify環境向けに最適化された起動設定
 //     console.log('🌐 ブラウザを起動しています...');
@@ -141,7 +140,6 @@
 // // 認証をチェックする関数
 // const performAuthentication = async (username, password, serviceType) => {
 //   let page = null;
-
 //   try {
 //     // サービスタイプに基づいて認証設定を取得
 //     const authConfig = getAuthConfig(serviceType);
@@ -168,7 +166,6 @@
 //     try {
 //       await page.waitForXPath(authConfig.loginButtonXPath, { timeout: 10000 });
 //       const [loginButton] = await page.$x(authConfig.loginButtonXPath);
-
 //       if (loginButton) {
 //         console.log('✅ ログインボタンが見つかりました');
 //         await loginButton.click();
@@ -179,7 +176,6 @@
 //     } catch (err) {
 //       console.log('⚠️ ログインボタンの待機中にタイムアウト - フォームが既に表示されている可能性があります');
 //     }
-
 //     // ログインフォームに入力
 //     console.log('📝 ログイン情報を入力しています...');
 //     await page.type(authConfig.usernameSelector, username);
@@ -196,7 +192,6 @@
 //     } else {
 //       throw new Error('ログイン送信ボタンが見つかりませんでした');
 //     }
-
 //     // 成功したかどうかを確認するXPathを待つ
 //     console.log(`🔍 成功確認のXPathを待っています: ${authConfig.successXPath}`);
 //     try {
@@ -265,7 +260,6 @@
 //   if (event.httpMethod !== 'POST') {
 //     return generateErrorResponse('POSTリクエストのみ受け付けています', 405);
 //   }
-
 //   try {
 //     // リクエストボディの解析
 //     let requestBody;
@@ -279,7 +273,6 @@
 //     } catch (error) {
 //       return generateErrorResponse('リクエストボディの解析に失敗しました', 400);
 //     }
-
 //     // 必須パラメータの確認
 //     if (!requestBody.username || !requestBody.password) {
 //       return generateErrorResponse('username, passwordは必須パラメータです', 400);
