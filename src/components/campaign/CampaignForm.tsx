@@ -50,6 +50,7 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
   const [jobTypes, setJobTypes] = useState([{
     id: `job-${Date.now()}`,
     name: '',
+    age_range: [0, 0],
     locations: [],
     quantity: 100,
     search_criteria: getInitialSearchCriteria()
