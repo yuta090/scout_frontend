@@ -306,6 +306,12 @@ const CampaignForm: React.FC<CampaignFormProps> = ({ customerId, campaign, onClo
         agency_id: user.id,
         title: formData.title || '無題のスカウト依頼',
         description: formData.description || '',
+        target_criteria: {
+          skills: jobTypes[0].search_criteria.skills,
+          age_range: jobTypes[0].age_range,
+          education: jobTypes[0].search_criteria.education,
+          experience_years: jobTypes[0].search_criteria.experience.max
+        },
         job_details: {
           platform: selectedPlatform,
           job_type: jobTypes.map(jt => ({
