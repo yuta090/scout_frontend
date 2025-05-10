@@ -136,6 +136,7 @@ const JobTypeSection: React.FC<JobTypeSectionProps> = ({
       name: '',
       locations: [],
       quantity: 100,
+      age_range: [0, 0],
       search_criteria: getInitialSearchCriteria()
     };
     onAddJobType(newJobType);

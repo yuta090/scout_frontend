@@ -65,6 +65,17 @@ const DeliveryScheduleSection: React.FC<DeliveryScheduleSectionProps> = ({
     });
   };
 
+  // 曜日の順序を月曜から日曜の順に並べる
+  const orderedDays: (keyof typeof DAY_NAMES)[] = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday'
+  ];
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-medium text-gray-900">オプション</h3>
@@ -112,11 +123,12 @@ const DeliveryScheduleSection: React.FC<DeliveryScheduleSectionProps> = ({
       <div className="bg-gray-50 rounded-lg p-4">
         <h3 className="text-lg font-medium text-gray-900 mb-4">配信スケジュール</h3>
         <div className="space-y-4">
-          {Object.entries(deliveryDays).map(([day, value]) => {
-            const dayName = DAY_NAMES[day as keyof typeof DAY_NAMES];
+          {orderedDays.map((day) => {
+            const value = deliveryDays[day];
+            const dayName = DAY_NAMES[day];
             const isNight = isNightTimeDelivery(value.start);
             const isWeekend = day === 'saturday' || day === 'sunday';
-            const optionPrice = getDayDeliveryPrice(day as keyof typeof DAY_NAMES, deliveryDays);
+            const optionPrice = getDayDeliveryPrice(day, deliveryDays);
 
             return (
               <div
@@ -160,7 +172,7 @@ const DeliveryScheduleSection: React.FC<DeliveryScheduleSectionProps> = ({
                       <div className="ml-6">
                         <select
                           value={value.start}
-                          onChange={(e) => handleTimeChange(day as keyof typeof DAY_NAMES, e.target.value)}
+                          onChange={(e) => handleTimeChange(day, e.target.value)}
                           className={`border rounded-md shadow-sm focus:ring-2 px-4 py-1.5 ${
                             isNight
                               ? 'border-amber-300 focus:ring-amber-500 focus:border-amber-500 bg-amber-50'
@@ -223,10 +235,11 @@ const DeliveryScheduleSection: React.FC<DeliveryScheduleSectionProps> = ({
                     <span>+{(additionalQuantity * 10).toLocaleString()}円</span>
                   </div>
                 )}
-                {Object.entries(deliveryDays).map(([day, value]) => {
-                  const price = getDayDeliveryPrice(day as keyof typeof DAY_NAMES, deliveryDays);
+                {orderedDays.map((day) => {
+                  const value = deliveryDays[day];
+                  const price = getDayDeliveryPrice(day, deliveryDays);
                   if (value.checked && price > 0) {
-                    const dayName = DAY_NAMES[day as keyof typeof DAY_NAMES];
+                    const dayName = DAY_NAMES[day];
                     const isNight = isNightTimeDelivery(value.start);
                     const isWeekend = day === 'saturday' || day === 'sunday';
                     return (

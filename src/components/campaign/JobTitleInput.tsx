@@ -29,12 +29,12 @@ const JobTitleInput: React.FC<JobTitleInputProps> = ({
         const { data, error } = await supabase
           .from('campaigns')
           .select('job_details')
-          .eq('customer_id', customerId)
+          .eq('customer_id', customerId) // Filter by customer_id
           .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        // 過去の職種情報を抽出して重複を除去
+        // Extract and deduplicate job titles
         const jobDetails = data
           ?.flatMap(campaign => {
             const jobTypes = campaign.job_details?.job_type || [];

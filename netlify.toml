@@ -1,12 +1,12 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  functions = "netlify/functions"
+  site_name = "hraim"
 
 [build.environment]
   NETLIFY_CLEAR_CACHE = "true"
   NODE_ENV = "production"
-  CACHE_BUST = "2025-03-24-001"
+  CACHE_BUST = "2025-04-14-007"
 
 [functions]
   directory = "netlify/functions"
@@ -19,7 +19,19 @@
   framework = "#custom"
   autoLaunch = true
 
+# Redirect all routes to index.html for client-side routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+  force = true
+
+# Add security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://*.airregi.jp https://*.airwork.net https://*.netlify.app https://hraim.com;"

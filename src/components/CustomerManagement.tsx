@@ -1,43 +1,182 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import CustomerList from './CustomerList';
 import CustomerForm from './CustomerForm';
 import ExcelUpload from './ExcelUpload';
-import { supabase, type Customer, getCustomers, createCustomer, updateCustomer, logActivity } from '../lib/supabase';
+import { supabase, type Customer, getCustomers, createCustomer, updateCustomer, logActivity, checkAirworkAuth, checkEngageAuth } from '../lib/supabase';
+import CustomerListSkeleton from './customer/CustomerListSkeleton';
+import CustomerListHeader from './customer/CustomerListHeader';
+import CustomerProgressBar from './customer/CustomerProgressBar';
 
 const CustomerManagement: React.FC = () => {
-  const navigate = useNavigate();
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | undefined>();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isExcelUploadOpen, setIsExcelUploadOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [displayCustomers, setDisplayCustomers] = useState<Customer[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          navigate('/');
-          return;
-        }
+  // 認証情報の取得
+  const { data: userData, isLoading: isUserLoading } = useQuery('user', async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+    return user;
+  }, {
+    retry: false,
+    staleTime: Infinity // ユーザー情報は変わらないのでキャッシュを永続化
+  });
 
-        const customersData = await getCustomers(user.id);
-        setCustomers(customersData);
-      } catch (err) {
-        console.error('Error fetching customers:', err);
-        setError('顧客情報の取得に失敗しました');
-      } finally {
-        setIsLoading(false);
+  // 顧客データの取得
+  const { data: customers = [], isLoading: isCustomersLoading, error } = useQuery(
+    ['customers', userData?.id],
+    () => getCustomers(userData!.id),
+    {
+      enabled: !!userData?.id, // ユーザーIDがある場合のみ実行
+      staleTime: 30000, // 30秒間はデータを新鮮と見なす
+      cacheTime: 1000 * 60 * 60, // 1時間キャッシュを保持
+      onSuccess: (data) => {
+        setDisplayCustomers(data);
+      },
+      keepPreviousData: true, // 新しいデータが取得されるまで前のデータを保持
+      refetchOnMount: true // コンポーネントがマウントされたときに再取得
+    }
+  );
+
+  // 検索結果のフィルタリング
+  React.useEffect(() => {
+    if (customers.length > 0) {
+      const searchLower = searchTerm.toLowerCase();
+      const filtered = customers.filter(customer =>
+        customer.company_name.toLowerCase().includes(searchLower) ||
+        (customer.contact_name?.toLowerCase() || '').includes(searchLower) ||
+        (customer.email?.toLowerCase() || '').includes(searchLower)
+      );
+      setDisplayCustomers(filtered);
+    }
+  }, [searchTerm, customers]);
+
+  // キャッシュからデータを取得して表示
+  React.useEffect(() => {
+    // ユーザーIDがある場合、既存のキャッシュデータを確認
+    if (userData?.id) {
+      const cachedData = queryClient.getQueryData<Customer[]>(['customers', userData.id]);
+      if (cachedData && cachedData.length > 0) {
+        setDisplayCustomers(cachedData);
       }
-    };
+    }
+  }, [userData?.id, queryClient]);
 
-    fetchCustomers();
-  }, [navigate]);
+  // 全体のローディング状態
+  const isLoading = isUserLoading || (isCustomersLoading && displayCustomers.length === 0);
+
+  // 顧客作成のミューテーション
+  const createCustomerMutation = useMutation(
+    async (data: Omit<Customer, 'id' | 'created_at' | 'updated_at'>) => {
+      if (!userData) throw new Error('認証エラー');
+      const newCustomer = await createCustomer({
+        ...data,
+        agency_id: userData.id
+      });
+      await logActivity(userData.id, 'customer_created', {
+        message: `${newCustomer.company_name}を登録しました`,
+        customer_id: newCustomer.id
+      });
+      return newCustomer;
+    },
+    {
+      onSuccess: (newCustomer) => {
+        queryClient.invalidateQueries(['customers', userData?.id]);
+        // 即時UIを更新するためにキャッシュを直接更新
+        setDisplayCustomers(prev => [...prev, newCustomer]);
+        setIsFormOpen(false);
+        setSelectedCustomer(undefined);
+      }
+    }
+  );
+
+  // 顧客更新のミューテーション
+  const updateCustomerMutation = useMutation(
+    async ({ id, data }: { id: string; data: Partial<Customer> }) => {
+      if (!userData) throw new Error('認証エラー');
+      const updatedCustomer = await updateCustomer(id, data);
+      await logActivity(userData.id, 'customer_updated', {
+        message: `${updatedCustomer.company_name}の情報を更新しました`,
+        customer_id: updatedCustomer.id
+      });
+      return updatedCustomer;
+    },
+    {
+      onSuccess: (updatedCustomer) => {
+        queryClient.invalidateQueries(['customers', userData?.id]);
+        // 即時UIを更新するためにキャッシュを直接更新
+        setDisplayCustomers(prev => 
+          prev.map(c => c.id === updatedCustomer.id ? updatedCustomer : c)
+        );
+        setIsFormOpen(false);
+        setSelectedCustomer(undefined);
+      }
+    }
+  );
+
+  // 顧客削除のミューテーション
+  const deleteCustomerMutation = useMutation(
+    async (customer: Customer) => {
+      if (!userData) throw new Error('認証エラー');
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', customer.id);
+      
+      if (error) throw error;
+      
+      await logActivity(userData.id, 'customer_deleted', {
+        message: `${customer.company_name}を削除しました`,
+        customer_id: customer.id
+      });
+      
+      return customer.id;
+    },
+    {
+      onSuccess: (deletedId) => {
+        queryClient.invalidateQueries(['customers', userData?.id]);
+        // 即時UIを更新するためにキャッシュを直接更新
+        setDisplayCustomers(prev => prev.filter(c => c.id !== deletedId));
+      }
+    }
+  );
+
+  // 一括アップロードのミューテーション
+  const bulkUploadMutation = useMutation(
+    async (customersData: Omit<Customer, 'id' | 'created_at' | 'updated_at'>[]) => {
+      if (!userData) throw new Error('認証エラー');
+      
+      const newCustomers = await Promise.all(
+        customersData.map(data => 
+          createCustomer({
+            ...data,
+            agency_id: userData.id
+          })
+        )
+      );
+      
+      await logActivity(userData.id, 'customers_bulk_created', {
+        message: `${newCustomers.length}件の顧客情報を一括登録しました`,
+        count: newCustomers.length
+      });
+      
+      return newCustomers;
+    },
+    {
+      onSuccess: (newCustomers) => {
+        queryClient.invalidateQueries(['customers', userData?.id]);
+        // 即時UIを更新するためにキャッシュを直接更新
+        setDisplayCustomers(prev => [...prev, ...newCustomers]);
+        setIsExcelUploadOpen(false);
+      }
+    }
+  );
 
   const handleAdd = () => {
-    // 修正: 新規顧客登録時に選択中の顧客情報をリセット
     setSelectedCustomer(undefined);
     setIsFormOpen(true);
   };
@@ -51,139 +190,175 @@ const CustomerManagement: React.FC = () => {
     if (!window.confirm(`${customer.company_name}を削除してもよろしいですか？`)) {
       return;
     }
-
-    try {
-      const { error } = await supabase
-        .from('customers')
-        .delete()
-        .eq('id', customer.id);
-
-      if (error) throw error;
-
-      setCustomers(customers.filter(c => c.id !== customer.id));
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await logActivity(user.id, 'customer_deleted', {
-          message: `${customer.company_name}を削除しました`,
-          customer_id: customer.id
-        });
-      }
-    } catch (err) {
-      console.error('Error deleting customer:', err);
-      alert('顧客の削除に失敗しました');
-    }
+    deleteCustomerMutation.mutate(customer);
   };
 
   const handleSubmit = async (data: Omit<Customer, 'id' | 'created_at' | 'updated_at'>) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('認証エラー');
-
-      let updatedCustomer: Customer;
-      
-      if (selectedCustomer) {
-        // 更新
-        updatedCustomer = await updateCustomer(selectedCustomer.id, data);
-        setCustomers(customers.map(c => 
-          c.id === selectedCustomer.id ? updatedCustomer : c
-        ));
-
-        await logActivity(user.id, 'customer_updated', {
-          message: `${updatedCustomer.company_name}の情報を更新しました`,
-          customer_id: updatedCustomer.id
-        });
-      } else {
-        // 新規作成
-        const newCustomer = await createCustomer({
-          ...data,
-          agency_id: user.id
-        });
-        setCustomers([...customers, newCustomer]);
-
-        await logActivity(user.id, 'customer_created', {
-          message: `${newCustomer.company_name}を登録しました`,
-          customer_id: newCustomer.id
-        });
-      }
-
-      setIsFormOpen(false);
-      // フォームを閉じた後に選択中の顧客情報をリセット
-      setSelectedCustomer(undefined);
-    } catch (err) {
-      console.error('Error saving customer:', err);
-      throw new Error('顧客情報の保存に失敗しました');
+    if (selectedCustomer) {
+      updateCustomerMutation.mutate({ id: selectedCustomer.id, data });
+    } else {
+      createCustomerMutation.mutate(data);
     }
   };
 
   const handleBulkUpload = async (customersData: Omit<Customer, 'id' | 'created_at' | 'updated_at'>[]) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('認証エラー');
-
-      const newCustomers = await Promise.all(
-        customersData.map(data => 
-          createCustomer({
-            ...data,
-            agency_id: user.id
-          })
-        )
-      );
-
-      setCustomers([...customers, ...newCustomers]);
-
-      await logActivity(user.id, 'customers_bulk_created', {
-        message: `${newCustomers.length}件の顧客情報を一括登録しました`,
-        count: newCustomers.length
-      });
-
-      setIsExcelUploadOpen(false);
-    } catch (err) {
-      console.error('Error bulk uploading customers:', err);
-      throw new Error('顧客情報の一括登録に失敗しました');
-    }
+    bulkUploadMutation.mutate(customersData);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      </div>
-    );
-  }
+  const [checkingAllAuth, setCheckingAllAuth] = useState(false);
+  const [checkProgress, setCheckProgress] = useState<{
+    current: number;
+    total: number;
+    message: string;
+  }>({ current: 0, total: 0, message: '' });
+
+  // 全認証チェック処理
+  const handleCheckAllAuth = useCallback(async () => {
+    if (!userData || !customers.length) return;
+    
+    setCheckingAllAuth(true);
+
+    try {
+      const authChecksNeeded = customers.flatMap(customer => {
+        const checks = [];
+        if (customer.airwork_auth_status !== 'authenticated') {
+          checks.push({ customer, platform: 'airwork' as const });
+        }
+        if (customer.engage_auth_status !== 'authenticated') {
+          checks.push({ customer, platform: 'engage' as const });
+        }
+        return checks;
+      });
+
+      setCheckProgress({
+        current: 0,
+        total: authChecksNeeded.length,
+        message: '認証チェックを開始します...'
+      });
+
+      for (let i = 0; i < authChecksNeeded.length; i++) {
+        const { customer, platform } = authChecksNeeded[i];
+
+        setCheckProgress({
+          current: i + 1,
+          total: authChecksNeeded.length,
+          message: `${customer.company_name}の${platform === 'airwork' ? 'AirWork' : 'Engage'}認証をチェック中...`
+        });
+
+        // 認証チェック処理
+        const result = platform === 'airwork'
+          ? await checkAirworkAuth(customer.airwork_login?.username, customer.airwork_login?.password)
+          : await checkEngageAuth(customer.id);
+
+        const { error } = await supabase
+          .from('customers')
+          .update({
+            [`${platform}_auth_status`]: result.success ? 'authenticated' : 'failed'
+          })
+          .eq('id', customer.id);
+
+        if (error) throw error;
+
+        // 即時UIを更新
+        setDisplayCustomers(prev => prev.map(c => {
+          if (c.id === customer.id) {
+            return {
+              ...c,
+              [platform === 'airwork' ? 'airwork_auth_status' : 'engage_auth_status']: 
+                result.success ? 'authenticated' : 'failed'
+            };
+          }
+          return c;
+        }));
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      setCheckProgress({
+        current: authChecksNeeded.length,
+        total: authChecksNeeded.length,
+        message: '全ての認証チェックが完了しました'
+      });
+
+      setTimeout(() => {
+        setCheckProgress({ current: 0, total: 0, message: '' });
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error checking auth:', error);
+    } finally {
+      setCheckingAllAuth(false);
+    }
+  }, [customers, userData]);
 
   return (
     <div className="space-y-6">
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
-          {error}
+          顧客情報の取得に失敗しました
         </div>
       )}
 
-      <CustomerList
-        customers={customers}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onAdd={handleAdd}
-        onBulkUpload={() => setIsExcelUploadOpen(true)}
-      />
+      <div className="bg-white shadow rounded-lg">
+        {/* ヘッダー部分は常に表示 */}
+        <CustomerListHeader 
+          onCheckAllAuth={handleCheckAllAuth}
+          onBulkUpload={() => setIsExcelUploadOpen(true)}
+          onAdd={handleAdd}
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          isCheckingAllAuth={checkingAllAuth}
+          customersCount={displayCustomers.length}
+        />
 
-      <CustomerForm
-        customer={selectedCustomer}
-        onSubmit={handleSubmit}
-        onCancel={() => {
-          setIsFormOpen(false);
-          // フォームをキャンセルした場合も選択中の顧客情報をリセット
-          setSelectedCustomer(undefined);
-        }}
-        isOpen={isFormOpen}
-      />
+        {/* 顧客リスト部分 */}
+        <div className="border-t border-gray-200">
+          {isLoading ? (
+            <CustomerListSkeleton />
+          ) : (
+            <CustomerList
+              customers={displayCustomers}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onAdd={handleAdd}
+              onBulkUpload={() => setIsExcelUploadOpen(true)}
+              isLoading={false}
+              checkingAllAuth={checkingAllAuth}
+              checkProgress={checkProgress}
+            />
+          )}
+        </div>
+      </div>
 
-      <ExcelUpload
-        onUpload={handleBulkUpload}
-        onClose={() => setIsExcelUploadOpen(false)}
-        isOpen={isExcelUploadOpen}
-      />
+      {/* モーダル */}
+      {isFormOpen && (
+        <CustomerForm
+          customer={selectedCustomer}
+          onSubmit={handleSubmit}
+          onCancel={() => {
+            setIsFormOpen(false);
+            setSelectedCustomer(undefined);
+          }}
+          isOpen={isFormOpen}
+        />
+      )}
+
+      {isExcelUploadOpen && (
+        <ExcelUpload
+          onUpload={handleBulkUpload}
+          onClose={() => setIsExcelUploadOpen(false)}
+          isOpen={isExcelUploadOpen}
+        />
+      )}
+
+      {/* 進捗バー */}
+      {checkProgress.total > 0 && (
+        <CustomerProgressBar
+          current={checkProgress.current}
+          total={checkProgress.total}
+          message={checkProgress.message}
+        />
+      )}
     </div>
   );
 };

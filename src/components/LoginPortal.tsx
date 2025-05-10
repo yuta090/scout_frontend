@@ -16,6 +16,7 @@ interface RegistrationData {
   company_name: string;
   contact_name: string;
   phone: string;
+  agency_type?: 'contractor' | 'referral';
 }
 
 const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, icon: Icon }) => {
@@ -32,6 +33,7 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isResetMode, setIsResetMode] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -41,6 +43,10 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
           const userRole = await checkUserRole(session.user.id);
           if (userRole === type) {
             navigate(`/${type}/dashboard`, { replace: true });
+          } else if (userRole === 'admin') {
+            navigate('/admin/dashboard', { replace: true });
+          } else if (userRole === 'referral_agent') {
+            navigate('/referral-dashboard', { replace: true });
           }
         }
       } catch (err) {
@@ -63,19 +69,34 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
           throw new Error('会社名、担当者名、電話番号は必須項目です');
         }
 
+        // 新規ユーザー登録時のメタデータを設定
+        const metadata = {
+          company_name: formData.company_name,
+          contact_name: formData.contact_name,
+          phone: formData.phone,
+          agency_type: formData.agency_type
+        };
+
+        console.log('登録データ:', {
+          email: formData.email,
+          password: '********', // パスワードはログに出さない
+          role: formData.agency_type === 'referral' ? 'referral_agent' : type,
+          metadata
+        });
+
         const { session } = await createUser(
           formData.email,
           formData.password,
-          type,
-          {
-            company_name: formData.company_name,
-            contact_name: formData.contact_name,
-            phone: formData.phone
-          }
+          formData.agency_type === 'referral' ? 'referral_agent' : type,
+          metadata
         );
 
         if (session) {
-          navigate(`/${type}/dashboard`, { replace: true });
+          if (formData.agency_type === 'referral') {
+            navigate('/referral-dashboard', { replace: true });
+          } else {
+            navigate(`/${type}/dashboard`, { replace: true });
+          }
         }
       } else {
         const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
@@ -97,12 +118,16 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
             throw new Error('ユーザープロフィールが見つかりません');
           }
 
-          if (userRole !== type) {
+          if (userRole === 'admin') {
+            navigate('/admin/dashboard', { replace: true });
+          } else if (userRole === 'referral_agent') {
+            navigate('/referral-dashboard', { replace: true });
+          } else if (userRole !== type) {
             await supabase.auth.signOut();
             throw new Error('アクセス権限がありません。正しいポータルからログインしてください。');
+          } else {
+            navigate(`/${type}/dashboard`, { replace: true });
           }
-
-          navigate(`/${type}/dashboard`, { replace: true });
         }
       }
     } catch (err) {
@@ -135,14 +160,23 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
     setError(null);
 
     try {
+      // 現在の環境のURLを取得（開発環境と本番環境で適切に動作するように）
+      const baseUrl = window.location.origin;
+      console.log('現在の環境URL:', baseUrl);
+      
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         formData.email,
         {
-          redirectTo: `${window.location.origin}/reset-password`
+          redirectTo: `${baseUrl}/reset-password`
         }
       );
 
-      if (resetError) throw resetError;
+      if (resetError) {
+        console.error('パスワードリセットエラー:', resetError);
+        throw resetError;
+      }
+      
+      setResetEmailSent(true);
       setError('パスワードリセットのメールを送信しました。メールに記載されたリンクから新しいパスワードを設定してください。');
     } catch (err) {
       console.error('Password reset error:', err);
@@ -169,7 +203,7 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
 
       {error && (
         <div className={`mb-4 p-3 rounded-md text-sm ${
-          error.includes('送信しました') || error.includes('作成されました')
+          error.includes('送信しました') || error.includes('作成されました') || resetEmailSent
             ? 'bg-green-50 border border-green-200 text-green-600'
             : 'bg-red-50 border border-red-200 text-red-600'
         }`}>
@@ -291,6 +325,38 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
                 />
               </div>
             </div>
+
+            <div>
+              <label htmlFor="agency-type" className="block text-sm font-medium text-gray-700 mb-1">
+                代理店タイプ <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, agency_type: 'contractor' })}
+                  className={`p-4 border rounded-lg flex items-center justify-center space-x-2 ${
+                    formData.agency_type === 'contractor' || !formData.agency_type
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : 'border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <Building2 className="h-5 w-5" />
+                  <span>請負代理店</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, agency_type: 'referral' })}
+                  className={`p-4 border rounded-lg flex items-center justify-center space-x-2 ${
+                    formData.agency_type === 'referral'
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : 'border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <Building2 className="h-5 w-5" />
+                  <span>取次代理店</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -309,6 +375,7 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
               onClick={() => {
                 setIsResetMode(false);
                 setError(null);
+                setResetEmailSent(false);
               }}
               className="inline-flex items-center text-sm text-indigo-600 hover:text-indigo-800"
               disabled={isLoading}
@@ -342,6 +409,7 @@ const LoginPortal: React.FC<LoginPortalProps> = ({ type, title, description, ico
                   onClick={() => {
                     setIsResetMode(true);
                     setError(null);
+                    setResetEmailSent(false);
                     setFormData({
                       email: '',
                       password: '',

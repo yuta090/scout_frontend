@@ -29,6 +29,7 @@ export interface SearchCriteria {
   includeAllLanguages: boolean;
   freeWordOr: string;
   freeWordAnd: string;
+  freeWordExclude: string;
 }
 
 // 他のexportは変更なし

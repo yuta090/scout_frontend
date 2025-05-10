@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Clock, CheckCircle, XCircle, AlertCircle, Eye, Plus, Search, Calendar, Edit, CreditCard } from 'lucide-react';
+import { FileText, Clock, CheckCircle, XCircle, AlertCircle, Eye, Plus, Search, Calendar, Edit, CreditCard, Warehouse, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Campaign } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import CampaignForm from './campaign/CampaignForm';
+import CampaignLog from './campaign/CampaignLog';
 
 interface ProjectListProps {
   userType: 'agency' | 'client';
   onNewProject?: () => void;
+  customerId?: string;
+  initialCount?: number | null;
 }
 
-const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => {
+const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject, customerId, initialCount = null }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -17,7 +20,9 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [viewCampaignLog, setViewCampaignLog] = useState<Campaign | null>(null);
   const [showNewCampaignForm, setShowNewCampaignForm] = useState(false);
+  const [campaignCount, setCampaignCount] = useState<number | null>(initialCount);
   const itemsPerPage = 50;
 
   const fetchCampaigns = async () => {
@@ -25,7 +30,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('campaigns')
         .select(`
           *,
@@ -33,11 +38,22 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
             company_name
           )
         `)
-        .eq('agency_id', user.id)
         .order('created_at', { ascending: false });
+
+      // If customerId is provided, filter by it
+      if (customerId) {
+        query = query.eq('customer_id', customerId);
+      } else {
+        query = query.eq('agency_id', user.id);
+      }
+
+      const { data, error, count } = await query;
 
       if (error) throw error;
       setCampaigns(data || []);
+      if (count !== null) {
+        setCampaignCount(count);
+      }
     } catch (err) {
       console.error('Error fetching campaigns:', err);
       setError('キャンペーン情報の取得に失敗しました');
@@ -48,21 +64,21 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
 
   useEffect(() => {
     fetchCampaigns();
-  }, []);
+  }, [customerId]);
 
   useEffect(() => {
     const filtered = campaigns.filter(campaign => {
       const searchLower = searchTerm.toLowerCase();
       return (
-        campaign.customers?.company_name?.toLowerCase().includes(searchLower)
+        (campaign.customers?.company_name?.toLowerCase() || '').includes(searchLower) ||
+        campaign.title.toLowerCase().includes(searchLower)
       );
     });
-    
-    // Sort filtered campaigns by created_at in descending order
-    const sorted = [...filtered].sort((a, b) => 
+
+    const sorted = [...filtered].sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-    
+
     setFilteredCampaigns(sorted);
     setCurrentPage(1);
   }, [searchTerm, campaigns]);
@@ -71,11 +87,19 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
     if (onNewProject) {
       onNewProject();
     } else {
+      setEditingCampaign(null);
       setShowNewCampaignForm(true);
     }
   };
 
+  const handleEditCampaign = (campaign: Campaign) => {
+    setEditingCampaign(campaign);
+    setShowNewCampaignForm(true);
+  };
+
   const handleCampaignSave = () => {
+    setShowNewCampaignForm(false);
+    setEditingCampaign(null);
     fetchCampaigns();
   };
 
@@ -157,18 +181,63 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
 
   const getJobTypeNames = (campaign: Campaign) => {
     if (!campaign.job_details?.job_type) return '';
-    return campaign.job_details.job_type
-      .map(job => job.name)
-      .filter(Boolean)
-      .join('、');
+    return Array.isArray(campaign.job_details.job_type)
+      ? campaign.job_details.job_type
+          .map(job => job.name)
+          .filter(Boolean)
+          .join('、')
+      : '';
   };
+
+  // スケルトンローディングコンポーネント
+  const ProjectListSkeleton = () => (
+    <div className="px-4 py-5 sm:px-6 space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-medium text-gray-900">スカウト一覧</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            読み込み中...
+          </p>
+        </div>
+        {userType === 'agency' && (
+          <div className="animate-pulse h-12 w-48 bg-indigo-200 rounded-lg"></div>
+        )}
+      </div>
+
+      <div className="max-w-xl">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <div className="animate-pulse h-10 w-full bg-gray-200 rounded-md"></div>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-200 mt-4">
+        <div className="animate-pulse space-y-4 py-4">
+          {Array(3).fill(0).map((_, index) => (
+            <div key={index} className="flex items-center space-x-4 px-4 py-4">
+              <div className="rounded-full bg-gray-200 h-10 w-10"></div>
+              <div className="flex-1">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/2 mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+              </div>
+              <div className="flex space-x-2">
+                <div className="rounded-full bg-gray-200 h-8 w-8"></div>
+                <div className="rounded-full bg-gray-200 h-8 w-8"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 
   if (isLoading) {
     return (
       <div className="bg-white shadow rounded-lg">
-        <div className="p-8 flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        </div>
+        <ProjectListSkeleton />
       </div>
     );
   }
@@ -269,13 +338,30 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
                   </div>
                 </div>
                 <div className="flex items-center">
-                  <button
-                    onClick={() => setEditingCampaign(campaign)}
-                    className="text-gray-400 hover:text-gray-500 p-2"
-                  >
-                    <span className="sr-only">編集</span>
-                    <Edit className="h-5 w-5" />
-                  </button>
+                  <div className="group relative">
+                    <button
+                      onClick={() => setViewCampaignLog(campaign)}
+                      className="text-gray-400 hover:text-gray-500 p-2 transition-colors duration-200"
+                      aria-label="スカウト送信履歴を表示"
+                    >
+                      <Warehouse className="h-5 w-5" />
+                    </button>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none">
+                      スカウト送信履歴を表示
+                    </div>
+                  </div>
+                  <div className="group relative">
+                    <button
+                      onClick={() => handleEditCampaign(campaign)}
+                      className="text-gray-400 hover:text-gray-500 p-2 transition-colors duration-200"
+                      aria-label="スカウト情報を編集"
+                    >
+                      <Edit className="h-5 w-5" />
+                    </button>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none">
+                      スカウト情報を編集
+                    </div>
+                  </div>
                 </div>
               </div>
             </li>
@@ -364,13 +450,19 @@ const ProjectList: React.FC<ProjectListProps> = ({ userType, onNewProject }) => 
 
       {(editingCampaign || showNewCampaignForm) && (
         <CampaignForm
-          customerId={editingCampaign?.customer_id}
+          customerId={editingCampaign?.customer_id || customerId}
           campaign={editingCampaign}
           onClose={() => {
             setEditingCampaign(null);
             setShowNewCampaignForm(false);
           }}
           onSave={handleCampaignSave}
+        />
+      )}
+      {viewCampaignLog && (
+        <CampaignLog
+          campaign={viewCampaignLog}
+          onClose={() => setViewCampaignLog(null)}
         />
       )}
     </div>

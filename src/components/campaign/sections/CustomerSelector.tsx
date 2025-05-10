@@ -13,38 +13,64 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({ selectedCustomer, o
   const [searchResults, setSearchResults] = useState<Customer[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
+  // 初期データの取得
   useEffect(() => {
     const fetchInitialCustomers = async () => {
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .limit(5)
-        .order('company_name');
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-      if (data) {
-        setSearchResults(data);
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('agency_id', user.id)
+          .eq('status', 'active')
+          .order('company_name')
+          .limit(5);
+
+        if (data) {
+          setSearchResults(data);
+        }
+      } catch (err) {
+        console.error('Error fetching initial customers:', err);
       }
     };
     fetchInitialCustomers();
   }, []);
 
+  // 検索処理
   useEffect(() => {
     const searchCustomers = async () => {
-      if (searchTerm.trim()) {
-        setHasSearched(true);
+      if (!searchTerm.trim()) {
+        setHasSearched(false);
+        setSearchResults([]);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
         const { data: customers, error } = await supabase
           .from('customers')
           .select('*')
+          .eq('agency_id', user.id)
+          .eq('status', 'active')
           .ilike('company_name', `%${searchTerm}%`)
+          .order('company_name')
           .limit(5);
 
+        setHasSearched(true);
         if (!error && customers) {
           setSearchResults(customers);
         }
-      } else {
-        setHasSearched(false);
-        setSearchResults([]);
+      } catch (err) {
+        console.error('Error searching customers:', err);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -91,24 +117,29 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({ selectedCustomer, o
             className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             required
           />
+          {isLoading && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+            </div>
+          )}
         </div>
 
         {!selectedCustomer && searchResults.length > 0 && (
-          <div className="absolute z-10 mt-1 inset-x-0 bg-white shadow-lg rounded-md border border-gray-200 max-h-60 overflow-y-auto">
+          <div className="absolute inset-x-0 z-10 mt-1 bg-white shadow-lg rounded-md border border-gray-200 max-h-60 overflow-y-auto">
             <ul className="py-1">
               {searchResults.map((customer) => (
-                <li key={customer.id}>
+                <li key={customer.id} className="px-4 py-2 hover:bg-gray-50">
                   <button
                     onClick={() => {
                       onSelectCustomer(customer);
                       setSearchTerm('');
                       setHasSearched(false);
                     }}
-                    className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center"
+                    className="w-full flex items-center text-left"
                   >
                     <Building2 className="h-5 w-5 text-gray-400 flex-shrink-0" />
                     <div className="ml-3 min-w-0 flex-1">
-                      <div className="font-medium text-gray-900 truncate">
+                      <div className="text-sm font-medium text-gray-900 truncate">
                         {customer.company_name}
                       </div>
                       {customer.contact_name && (
@@ -171,6 +202,7 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({ selectedCustomer, o
 
       {showCustomerForm && (
         <CustomerForm
+          initialData={{ company_name: searchTerm }} // Pre-fill company name from search term
           onSubmit={handleCustomerSubmit}
           onCancel={() => setShowCustomerForm(false)}
           isOpen={showCustomerForm}

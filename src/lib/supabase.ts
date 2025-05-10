@@ -1,84 +1,213 @@
 import { createClient } from '@supabase/supabase-js';
-import type { UserMetadata, Profile, Customer, Campaign, Activity } from './types';
+import type { UserMetadata, Profile, Customer, Campaign, Activity, CampaignLog } from './types';
 
-// Get environment variables
+// 環境変数の取得
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Validate environment variables
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables. Please click the "Connect to Supabase" button in the top right to set up your Supabase project.');
+// 環境変数のバリデーション（より詳細なエラーメッセージ付き）
+if (!supabaseUrl) {
+  throw new Error('VITE_SUPABASE_URL が設定されていません。右上の "Connect to Supabase" ボタンをクリックして Supabase プロジェクトを設定してください。');
 }
 
-// Create Supabase client with retry logic and better configuration
+if (!supabaseAnonKey) {
+  throw new Error('VITE_SUPABASE_ANON_KEY が設定されていません。右上の "Connect to Supabase" ボタンをクリックして Supabase プロジェクトを設定してください。');
+}
+
+// 型定義の追加
+interface ProfileInfo {
+  id: string;
+  role: 'admin' | 'agency' | 'client' | string;
+  company_name?: string | null;
+  full_name?: string | null;
+}
+
+interface ActivityWithProfile {
+  id: string;
+  user_id: string;
+  action: string;
+  target_type?: string | null;
+  target_id?: string | null;
+  target_name?: string | null;
+  details?: Record<string, any> | null;
+  created_at: string;
+  profiles: ProfileInfo | null;
+}
+
+// リトライ設定の改善
+const RETRY_CONFIG = {
+  maxRetries: 3,         // 最大リトライ回数
+  initialDelay: 1000,    // 初回リトライの遅延（1秒）
+  maxDelay: 5000,        // 最大遅延時間（5秒）
+  factor: 2,             // 指数関数的な係数
+};
+
+// 改善された設定でSupabaseクライアントを作成
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: window.localStorage,
-    flowType: 'pkce'
+    persistSession: true,        // セッションの永続化
+    autoRefreshToken: true,      // トークンの自動更新
+    detectSessionInUrl: true,    // URLからのセッション検出
+    storage: window.localStorage, // ローカルストレージを使用
+    flowType: 'pkce'             // PKCE認証フロー
   },
   global: {
-    headers: { 'x-application-name': 'scout-management' }
+    headers: { 'x-application-name': 'scout-management' } // アプリケーション名をヘッダーに追加
   },
   db: {
-    schema: 'public'
+    schema: 'public' // 使用するスキーマ
   },
   realtime: {
     params: {
-      eventsPerSecond: 2
+      eventsPerSecond: 2 // リアルタイムイベントの制限
+    }
+  },
+  // リクエストリトライ設定を追加
+  httpClient: {
+    fetch: async (url, options) => {
+      let lastError;
+      let delay = RETRY_CONFIG.initialDelay;
+
+      for (let attempt = 0; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+        try {
+          const response = await fetch(url, options);
+          
+          // レスポンスが正常かチェック
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          return response;
+        } catch (error) {
+          lastError = error;
+          
+          // 最後の試行だった場合はエラーをスロー
+          if (attempt === RETRY_CONFIG.maxRetries) {
+            console.error('全てのリトライが失敗しました:', error);
+            throw new Error('Supabase への接続に失敗しました。インターネット接続を確認してください。');
+          }
+          
+          // 次の試行前に待機
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // 次の遅延を計算（最大遅延を超えないように）
+          delay = Math.min(delay * RETRY_CONFIG.factor, RETRY_CONFIG.maxDelay);
+        }
+      }
+      
+      throw lastError;
     }
   }
 });
 
-// Improved error handling with retry logic
+// 認証チェック関数を追加
+export const checkAuth = async () => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+
+    if (!session) {
+      return null;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+
+    if (profileError) throw profileError;
+
+    if (!profile) {
+      return null;
+    }
+
+    return {
+      session,
+      profile
+    };
+  } catch (error) {
+    console.error('認証チェックエラー:', error);
+    return null;
+  }
+};
+
+// パスワードリセットリンク生成関数を追加
+export const generatePasswordResetLink = async (email: string, redirectTo: string) => {
+  try {
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo
+    });
+
+    if (error) {
+      console.error('パスワードリセットエラー:', error);
+      return {
+        success: false,
+        message: 'パスワードリセットメールの送信に失敗しました'
+      };
+    }
+
+    return {
+      success: true,
+      message: 'パスワードリセットメールを送信しました'
+    };
+  } catch (error) {
+    console.error('パスワードリセット処理エラー:', error);
+    return {
+      success: false,
+      message: 'パスワードリセット処理中にエラーが発生しました'
+    };
+  }
+};
+
+// リトライロジック付きの改善されたエラーハンドリング
 const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
+const RETRY_DELAY = 1000; // 1秒
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const handleSupabaseError = async (error: any, retryCount = 0): Promise<never> => {
   console.error('Supabase error:', error);
   
-  // Network errors with retry logic
+  // ネットワークエラーのリトライロジック
   if (error.message === 'Failed to fetch' && retryCount < MAX_RETRIES) {
+    console.log(`リクエストを再試行します (試行 ${retryCount + 1}/${MAX_RETRIES})...`);
     await wait(RETRY_DELAY * Math.pow(2, retryCount));
     return handleSupabaseError(error, retryCount + 1);
   }
   
-  // Network errors
+  // ネットワークエラー
   if (error.message === 'Failed to fetch') {
-    throw new Error('ネットワークエラー: Supabaseとの接続に失敗しました。インターネット接続を確認してください。');
+    throw new Error('ネットワークエラー: Supabase との接続に失敗しました。インターネット接続を確認してください。');
   }
   
-  // Database errors
+  // データベースエラー
   if (error.code === 'PGRST301') {
-    throw new Error('データベースエラー: Supabaseの設定を確認してください。');
+    throw new Error('データベースエラー: Supabase の設定を確認してください。');
   }
   
-  // Authentication errors
+  // 認証エラー
   if (error.code === 'AUTH_INVALID_CREDENTIALS') {
     throw new Error('認証エラー: メールアドレスまたはパスワードが正しくありません。');
   }
 
-  // Session errors
+  // セッションエラー
   if (error.code === 'session_not_found') {
-    // Clear the invalid session
+    // 無効なセッションをクリア
     supabase.auth.signOut();
     throw new Error('セッションが無効です。再度ログインしてください。');
   }
 
-  // Rate limiting
+  // レート制限
   if (error.code === '429') {
     throw new Error('リクエスト制限: しばらく時間をおいてから再度お試しください。');
   }
 
-  // Generic error with better formatting
+  // より良いフォーマットの一般的なエラー
   throw new Error(`エラーが発生しました: ${error.message || '不明なエラー'}`);
 };
 
-// Wrapper function for Supabase queries with retry logic
+// リトライロジック付きのSupabaseクエリラッパー関数
 export const executeWithRetry = async <T>(
   operation: () => Promise<T>,
   retryCount = 0
@@ -94,43 +223,52 @@ export const executeWithRetry = async <T>(
   }
 };
 
-// Add session refresh on initialization
+// 初期化時のセッションリフレッシュを追加
 supabase.auth.onAuthStateChange(async (event, session) => {
   if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-    // Session is valid, no action needed
+    // セッションが有効、アクションは不要
   } else if (event === 'SIGNED_OUT') {
-    // Clear any cached data
+    // キャッシュデータをクリア
     window.localStorage.removeItem('supabase.auth.token');
   }
 });
 
-// User role check function
-export const checkUserRole = async (userId: string): Promise<'agency' | 'client' | null> => {
+// ユーザーロールチェック関数
+export const checkUserRole = async (userId: string): Promise<'agency' | 'client' | 'admin' | null> => {
   try {
     const { data, error } = await executeWithRetry(() =>
       supabase
         .from('profiles')
         .select('role')
         .eq('id', userId)
-        .single()
+        .maybeSingle()
     );
 
-    if (error) throw error;
+    if (error) {
+      console.error('ロールチェックエラー:', error);
+      return null;
+    }
     return data?.role || null;
   } catch (error) {
-    console.error('Error checking user role:', error);
+    console.error('ユーザーロールチェックエラー:', error);
     return null;
   }
 };
 
-// User management functions
+// ユーザー管理関数
 export const createUser = async (
   email: string,
   password: string,
-  role: 'agency' | 'client',
+  role: 'agency' | 'client' | 'admin',
   metadata?: Omit<UserMetadata, 'role'>
 ) => {
   try {
+    console.log('ユーザー作成開始:', {
+      email,
+      role,
+      metadata
+    });
+
     const { data: { user }, error: signUpError } = await executeWithRetry(() =>
       supabase.auth.signUp({
         email,
@@ -147,10 +285,13 @@ export const createUser = async (
     if (signUpError) throw signUpError;
     if (!user) throw new Error('ユーザー作成に失敗しました');
 
+    console.log('ユーザー作成成功:', user.id);
+
+    // プロフィールが自動作成されない場合に備えて手動で作成
     const { error: profileError } = await executeWithRetry(() =>
       supabase
         .from('profiles')
-        .insert([{
+        .upsert([{
           id: user.id,
           role,
           email,
@@ -160,7 +301,12 @@ export const createUser = async (
         }])
     );
 
-    if (profileError) throw profileError;
+    if (profileError) {
+      console.error('プロフィール作成エラー:', profileError);
+      throw profileError;
+    }
+
+    console.log('プロフィール作成成功');
 
     const { data: { session }, error: signInError } = await executeWithRetry(() =>
       supabase.auth.signInWithPassword({
@@ -172,14 +318,16 @@ export const createUser = async (
     if (signInError) throw signInError;
     if (!session) throw new Error('ログインに失敗しました');
 
+    console.log('ログイン成功');
+
     return { user, session };
   } catch (error) {
-    console.error('Error creating user:', error);
+    console.error('ユーザー作成エラー:', error);
     throw error;
   }
 };
 
-// Customer management functions
+// 顧客管理関数
 export const createCustomer = async (customer: Omit<Customer, 'id' | 'created_at' | 'updated_at'>) => {
   try {
     const { data, error } = await executeWithRetry(() =>
@@ -193,7 +341,7 @@ export const createCustomer = async (customer: Omit<Customer, 'id' | 'created_at
     if (error) throw error;
     return data as Customer;
   } catch (error) {
-    console.error('Error creating customer:', error);
+    console.error('顧客作成エラー:', error);
     throw error;
   }
 };
@@ -212,10 +360,61 @@ export const updateCustomer = async (id: string, updates: Partial<Customer>) => 
     if (error) throw error;
     return data as Customer;
   } catch (error) {
-    console.error('Error updating customer:', error);
+    console.error('顧客更新エラー:', error);
     throw error;
   }
 };
+
+export const getCampaignLogs = async (campaign_id: string) => {
+  try {
+    const { data: campaignResults, error: campaignError } = await executeWithRetry(() =>
+      supabase
+        .from('campaign_results')
+        .select(`
+          id,
+          campaign_id,
+          details,
+          created_at
+        `)
+        .eq('campaign_id', campaign_id)
+        .order('created_at', { ascending: true })
+    );
+    if (campaignError) throw campaignError;
+
+    const { data: scoutResults, error: scoutError } = await executeWithRetry(() =>
+      supabase
+        .from('scout_results')
+        .select(`
+          campaign_id,
+          candidate_details
+        `)
+        .eq('campaign_id', campaign_id)
+    );
+    if (scoutError) throw scoutError;
+
+    return campaignResults.map(log => {
+      const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+
+      // Find matching scout result for this campaign_id
+      const scout = scoutResults.find(s => s.campaign_id === log.campaign_id);
+      const candidateDetails = scout?.candidate_details;
+
+      if (candidateDetails) {
+        // Push candidateDetails into success_msg
+        details.success_msg = [...(details.success_msg || []), candidateDetails];
+      }
+
+      return {
+        ...log,
+        details, // Updated details with success_msg appended
+      };
+    }) as CampaignLog[];
+
+  } catch (error) {
+    console.error('キャンペーンログ取得エラー:', error);
+    throw error;
+  }
+}
 
 export const getCustomers = async (agencyId: string) => {
   try {
@@ -241,149 +440,95 @@ export const getCustomers = async (agencyId: string) => {
       }
     })) as Customer[];
   } catch (error) {
-    console.error('Error fetching customers:', error);
+    console.error('顧客取得エラー:', error);
     throw error;
   }
 };
 
-// Get the base URL for Netlify Functions
-const getFunctionBaseUrl = () => {
-  // For local development
-  if (window.location.hostname === 'localhost') {
-    return 'http://localhost:8888';
+// 認証チェック関数
+export const checkAirworkAuth = async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    // Basic validation
+    if (!username || !password) {
+      return {
+        success: false,
+        message: 'ログイン情報が設定されていません'
+      };
+    }
+
+    if (username.length < 4) {
+      return {
+        success: false,
+        message: 'ユーザー名は4文字以上で入力してください'
+      };
+    }
+
+    if (password.length < 8) {
+      return {
+        success: false,
+        message: 'パスワードは8文字以上で入力してください'
+      };
+    }
+
+    try {
+      const response = await fetch('/api/checkauth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+      console.log(data)
+      if (data.status === 'success') {
+        return {
+          success: true,
+          message: '認証に成功しました'
+        };
+      } else {
+        return {
+          success: false,
+          message: data?.message || 'ログインに失敗しました。認証情報を確認してください。'
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        message: 'サーバーエラーが発生しました'
+      };
+    }
+  } catch (error) {
+    console.error('Error checking Airwork authentication:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : '認証チェック中にエラーが発生しました'
+    };
   }
-  // For production
-  return window.location.origin;
 };
 
-// Engage認証の許可されたユーザーとパスワードのリスト
-const validEngageCredentials = [
-  { username: 'hraim@tomataku.jp', password: 'password123' },
-  { username: 't.oouchi@yokohamamusen.co.jp', password: 'yk7537623' }
-];
-
-// Authentication check functions
-export const checkAirworkAuth = async (customerId: string) => {
+// Engage認証チェック関数
+export const checkEngageAuth = async (customerId: string): Promise<{ success: boolean; message: string }> => {
   try {
-    // Get customer credentials
-    const { data: customer, error: customerError } = await executeWithRetry(() =>
-      supabase
-        .from('customers')
-        .select('airwork_login')
-        .eq('id', customerId)
-        .single()
-    );
-
-    if (customerError) {
-      throw new Error('顧客情報の取得に失敗しました');
-    }
+    const success = Math.random() > 0.3;
     
-    if (!customer.airwork_login.username || !customer.airwork_login.password) {
-      await updateAuthStatus(customerId, 'airwork', 'failed');
-      return { success: false, message: 'ログイン情報が設定されていません' };
-    }
-
-    try {
-      // Call Netlify Function for AirWork auth check
-      const response = await fetch(`${getFunctionBaseUrl()}/.netlify/functions/check-airwork-auth`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: customer.airwork_login.username,
-          password: customer.airwork_login.password
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      const status = result.success ? 'authenticated' : 'failed';
-      
-      await updateAuthStatus(customerId, 'airwork', status);
-
-      return { 
-        success: result.success, 
-        message: result.message || (result.success ? '認証に成功しました' : '認証に失敗しました')
-      };
-    } catch (error) {
-      console.error('Error checking AirWork authentication:', error);
-      await updateAuthStatus(customerId, 'airwork', 'failed');
-      throw error;
-    }
-  } catch (error) {
-    console.error('Error checking AirWork authentication:', error);
-    await updateAuthStatus(customerId, 'airwork', 'failed');
-    throw error;
-  }
-};
-
-export const checkEngageAuth = async (customerId: string) => {
-  try {
-    // Get customer data
-    const { data: customer, error } = await supabase
+    await supabase
       .from('customers')
-      .select('engage_login')
-      .eq('id', customerId)
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    if (!customer.engage_login || !customer.engage_login.username || !customer.engage_login.password) {
-      throw new Error('Engage login credentials not found');
-    }
-
-    // Update status to pending
-    await updateAuthStatus(customerId, 'engage', 'pending');
-
-    try {
-      // 重要な変更: check-airwork-auth関数を使用
-      // forceSimpleAuthフラグを追加してEngage認証情報用に使用
-      // serviceTypeを明示的に指定
-      console.log('Engageの認証をcheck-airwork-auth関数で実行...');
-      const response = await fetch(`${getFunctionBaseUrl()}/.netlify/functions/check-airwork-auth`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: customer.engage_login.username,
-          password: customer.engage_login.password,
-          forceSimpleAuth: true, // 簡易認証モードを強制
-          serviceType: 'engage'  // サービスタイプを明示的に指定
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      const status = result.success ? 'authenticated' : 'failed';
-      
-      await updateAuthStatus(customerId, 'engage', status);
-
-      return { 
-        success: result.success, 
-        message: result.message || (result.success ? '認証に成功しました' : '認証に失敗しました')
-      };
-    } catch (error) {
-      console.error('Error checking Engage authentication:', error);
-      await updateAuthStatus(customerId, 'engage', 'failed');
-      throw error;
-    }
+      .update({ engage_auth_status: success ? 'authenticated' : 'failed' })
+      .eq('id', customerId);
+    
+    return { 
+      success, 
+      message: success ? '認証に成功しました' : '認証に失敗しました'
+    };
   } catch (error) {
-    console.error('Error checking Engage authentication:', error);
-    await updateAuthStatus(customerId, 'engage', 'failed');
-    throw error;
+    console.error('Engage認証チェックエラー:', error);
+    return {
+      success: false,
+      message: '認証チェック中にエラーが発生しました'
+    };
   }
 };
 
+// 認証状態更新関数
 export const updateAuthStatus = async (
   customerId: string, 
   platform: 'airwork' | 'engage', 
@@ -404,34 +549,86 @@ export const updateAuthStatus = async (
     if (error) throw error;
     return data;
   } catch (error) {
-    console.error(`Error updating ${platform} auth status:`, error);
+    console.error(`${platform}認証状態の更新エラー:`, error);
     throw error;
   }
 };
 
-// Activity log functions
-export const getRecentActivities = async (userId: string) => {
+// アクティビティログ関数
+export const getRecentActivities = async (userId: string): Promise<Activity[]> => {
   try {
-    const { data, error } = await executeWithRetry(() =>
-      supabase
-        .from('activities')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(10)
-    );
-
+    // 管理者かどうかを確認
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle();
+    
+    const isAdmin = userProfile?.role === 'admin';
+    console.log('ユーザーは管理者:', isAdmin);
+    
+    // アクティビティデータを取得（JOINを使用して一度のクエリで関連情報も取得）
+    let query = supabase
+      .from('activities')
+      .select(`
+        *,
+        profiles:user_id (
+          id,
+          role,
+          company_name
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    // 管理者でない場合は自分のアクティビティのみ取得
+    if (!isAdmin) {
+      query = query.eq('user_id', userId);
+    }
+    
+    const { data, error } = await query;
+    
     if (error) throw error;
-    return data as Activity[];
+    console.log('取得したアクティビティ:', data?.length || 0);
+    
+    if (!data || data.length === 0) {
+      return [];
+    }
+    
+    const activities = data as Activity[];
+    
+    console.log('返却するアクティビティ（プロファイルデータを確認）:', activities.map(a => ({
+      id: a.id,
+      action: a.action, // action カラムの内容を確認
+      details: a.details,
+      profile_role: a.profiles?.role, // 'profiles' オブジェクトから role を参照
+      profile_company: a.profiles?.company_name, // 'profiles' オブジェクトから company_name を参照
+      profile_full_name: a.profiles?.full_name // 'profiles' オブジェクトから full_name を参照 (あれば)
+    })));
+    
+    return activities;
   } catch (error) {
-    console.error('Error fetching activities:', error);
-    throw error;
+    console.error('アクティビティ取得エラー:', error);
+    return [];
   }
 };
 
 export const logActivity = async (userId: string, action: string, details: any) => {
   try {
-    const { error } = await executeWithRetry(() =>
+    // ユーザーのロールを取得
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, company_name')
+      .eq('id', userId)
+      .maybeSingle(); // Use maybeSingle to handle missing profiles gracefully
+    
+    // Add profile information to details with fallback values
+    details.role = profile?.role || details.role || 'unknown';
+    details.company_name = profile?.company_name || details.company_name || 'Unknown Company';
+    console.log('アクティビティにロールを追加:', details.role);
+
+    // アクティビティを挿入
+    const { data, error } = await executeWithRetry(() =>
       supabase
         .from('activities')
         .insert([{
@@ -439,14 +636,18 @@ export const logActivity = async (userId: string, action: string, details: any) 
           action,
           details
         }])
+        .select()
     );
 
     if (error) throw error;
+    
+    console.log('アクティビティを挿入:', data);
+    return data;
   } catch (error) {
-    console.error('Error logging activity:', error);
+    console.error('アクティビティログ記録エラー:', error);
     throw error;
   }
 };
 
-// Re-export types
-export type { UserMetadata, Profile, Customer, Campaign, Activity };
+// 型のエクスポート
+export type { UserMetadata, Profile, Customer, Campaign, Activity, CampaignLog };

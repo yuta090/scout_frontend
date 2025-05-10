@@ -1,0 +1,1 @@
+console.log('アクティビティのロール情報:', JSON.stringify(activities[0]?.details, null, 2));

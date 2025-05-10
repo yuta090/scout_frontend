@@ -2,174 +2,221 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Background animation styles */
 @keyframes gradientFlow {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
 
-@keyframes float {
-  0% { transform: translateY(0) rotate(0deg) scale(1); }
-  33% { transform: translateY(-30px) rotate(8deg) scale(1.1); }
-  66% { transform: translateY(15px) rotate(-5deg) scale(0.95); }
-  100% { transform: translateY(0) rotate(0deg) scale(1); }
-}
-
-@keyframes bubble {
-  0% { transform: translate(0, 0) scale(1); opacity: 0; }
-  50% { transform: translate(var(--tx), var(--ty)) scale(1.2); opacity: 0.8; }
-  100% { transform: translate(calc(var(--tx) * 2), calc(var(--ty) * 2)) scale(1); opacity: 0; }
-}
-
-@keyframes pulse {
-  0% { transform: scale(1); opacity: 0.4; }
-  50% { transform: scale(1.2); opacity: 0.8; }
-  100% { transform: scale(1); opacity: 0.4; }
-}
-
 .bg-gradient-to-br {
+  background: linear-gradient(-45deg, #00c6fb, #005bea, #3f5efb, #6f86d6);
+  background-size: 400% 400%;
+  animation: gradientFlow 15s ease infinite;
   position: relative;
   overflow: hidden;
-  background: 
-    radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.8) 0%, transparent 50%),
-    radial-gradient(circle at 100% 0%, rgba(99, 102, 241, 0.3) 0%, transparent 50%),
-    radial-gradient(circle at 100% 100%, rgba(244, 63, 94, 0.2) 0%, transparent 50%),
-    radial-gradient(circle at 0% 100%, rgba(16, 185, 129, 0.25) 0%, transparent 50%),
-    linear-gradient(120deg, #4f46e5 0%, #0ea5e9 50%, #06b6d4 100%);
-  animation: gradientFlow 20s ease infinite;
-  background-size: 400% 400%;
 }
 
-.bg-gradient-to-br::before,
-.bg-gradient-to-br::after {
-  content: '';
-  position: absolute;
-  width: 80vmax;
-  height: 80vmax;
-  border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
-  mix-blend-mode: overlay;
-  animation: float 12s ease-in-out infinite;
-  z-index: 0;
-}
-
-.bg-gradient-to-br::before {
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0%, transparent 70%);
-  top: -40%;
-  left: -20%;
-  animation-delay: -2s;
-}
-
-.bg-gradient-to-br::after {
-  background: radial-gradient(circle, rgba(244, 63, 94, 0.4) 0%, transparent 70%);
-  bottom: -30%;
-  right: -10%;
-  animation-delay: -4s;
-}
-
-.container {
-  position: relative;
-  z-index: 1;
-}
-
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-slideDown {
-  animation: slideDown 0.2s ease-out;
-}
-
-.light-effect {
-  position: absolute;
-  width: 50vmax;
-  height: 50vmax;
-  border-radius: 45% 55% 70% 30% / 45% 45% 55% 55%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0%, transparent 70%);
-  animation: pulse 10s ease-in-out infinite;
-  mix-blend-mode: soft-light;
-}
-
-.light-effect:nth-child(1) {
-  top: 10%;
-  left: 20%;
-  animation-delay: -2s;
-  transform: rotate(15deg);
-}
-
-.light-effect:nth-child(2) {
-  bottom: 20%;
-  right: 15%;
-  animation-delay: -4s;
-  transform: rotate(-20deg);
-}
-
-.light-effect:nth-child(3) {
-  top: 40%;
-  left: 40%;
-  animation-delay: -6s;
-  transform: rotate(30deg);
-}
-
-/* Bubble effects */
+/* Blob animations */
 .bubble {
   position: absolute;
+  width: 1000px;
+  height: 1000px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.1));
+  filter: blur(100px);
+  opacity: 0.3;
+  mix-blend-mode: soft-light;
   pointer-events: none;
-  mix-blend-mode: screen;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.2);
+  animation: blobFloat 20s ease-in-out infinite;
 }
 
 .bubble:nth-child(1) {
-  width: 120px;
-  height: 120px;
-  top: 20%;
-  left: 10%;
-  --tx: 30px;
-  --ty: -40px;
-  animation: bubble 8s ease-in-out infinite;
+  top: -30%;
+  left: -20%;
+  width: 1200px;
+  height: 1200px;
+  background: rgba(63, 94, 251, 0.25);
+  animation-delay: 0s;
 }
 
 .bubble:nth-child(2) {
-  width: 80px;
-  height: 80px;
-  top: 60%;
-  right: 20%;
-  --tx: -40px;
-  --ty: -30px;
-  animation: bubble 12s ease-in-out infinite;
-  animation-delay: -3s;
+  top: 20%;
+  right: -30%;
+  width: 1400px;
+  height: 1400px;
+  background: rgba(0, 198, 251, 0.2);
+  animation-delay: -5s;
 }
 
 .bubble:nth-child(3) {
-  width: 160px;
-  height: 160px;
-  bottom: 10%;
-  left: 30%;
-  --tx: 50px;
-  --ty: -60px;
-  animation: bubble 10s ease-in-out infinite;
-  animation-delay: -6s;
+  bottom: -40%;
+  left: 10%;
+  width: 1300px;
+  height: 1300px;
+  background: rgba(111, 134, 214, 0.2);
+  animation-delay: -10s;
 }
 
 .bubble:nth-child(4) {
-  width: 100px;
-  height: 100px;
   top: 40%;
-  right: 35%;
-  --tx: -30px;
-  --ty: -50px;
-  animation: bubble 14s ease-in-out infinite;
-  animation-delay: -8s;
+  left: -20%;
+  width: 900px;
+  height: 900px;
+  background: rgba(63, 94, 251, 0.15);
+  animation-delay: -15s;
 }
 
 .bubble:nth-child(5) {
-  width: 140px;
-  height: 140px;
-  bottom: 30%;
+  bottom: -20%;
   right: 10%;
-  --tx: -50px;
-  --ty: -40px;
-  animation: bubble 11s ease-in-out infinite;
+  width: 1100px;
+  height: 1100px;
+  background: rgba(0, 198, 251, 0.15);
+  animation-delay: -7s;
+}
+
+@keyframes blobFloat {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate(80px, -80px) scale(1.2) rotate(120deg);
+  }
+  66% {
+    transform: translate(-80px, 80px) scale(0.8) rotate(240deg);
+  }
+  100% {
+    transform: translate(0, 0) scale(1) rotate(360deg);
+  }
+}
+
+/* Light effect animations */
+.light-effect {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%);
+  animation: pulse 10s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.light-effect:nth-child(1) {
+  width: 1200px;
+  height: 1200px;
+  top: -30%;
+  left: -20%;
+  animation-delay: 0s;
+}
+
+.light-effect:nth-child(2) {
+  width: 1000px;
+  height: 1000px;
+  bottom: -20%;
+  right: -10%;
   animation-delay: -5s;
+}
+
+.light-effect:nth-child(3) {
+  width: 800px;
+  height: 800px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -7s;
+}
+
+@keyframes pulse {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translate(30px, -30px) scale(1.1);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.2;
+  }
+}
+
+/* Tooltip styles */
+.tooltip {
+  @apply invisible absolute z-50 px-2 py-1 text-xs text-white bg-gray-900 rounded-md opacity-0 transition-all duration-200;
+  white-space: nowrap;
+}
+
+.tooltip-wrapper:hover .tooltip {
+  @apply visible opacity-100;
+}
+
+/* Slide down animation */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideDown {
+  animation: slideDown 0.2s ease-out forwards;
+}
+
+/* スケルトンローディングのアニメーション */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite linear;
+  background: linear-gradient(to right, #f6f7f8 8%, #edeef1 18%, #f6f7f8 33%);
+  background-size: 1000px 100%;
+}
+
+/* リストスタイルの削除 */
+.list-none {
+  list-style-type: none !important;
+}
+
+.list-none > div {
+  list-style-type: none !important;
+}
+
+/* react-windowのリストアイテムのスタイル修正 */
+[data-virtualized="true"] {
+  list-style: none !important;
+  padding-left: 0 !important;
+}
+
+/* テキスト省略表示用のクラス */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

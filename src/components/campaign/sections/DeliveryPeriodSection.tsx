@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Calendar } from 'lucide-react';
 import { DeliveryDays } from '../types';
-import { calculateDeliveryDaysInPeriod, calculateTotalQuantity } from '../utils';
+import { calculateDeliveryDaysInPeriod, calculateTotalQuantity, DAILY_LIMIT } from '../utils';
 
 interface DeliveryPeriodSectionProps {
   startDate: string;
@@ -10,6 +10,8 @@ interface DeliveryPeriodSectionProps {
   additionalQuantity?: number;
   onStartDateChange: (date: string) => void;
   onEndDateChange: (date: string) => void;
+  isEditing?: boolean; // 編集モードかどうかを示すフラグを追加
+  onAdditionalQuantityChange?: (quantity: number) => void; // 追加送信数を変更するコールバック
 }
 
 const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
@@ -18,7 +20,9 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
   deliveryDays,
   additionalQuantity = 0,
   onStartDateChange,
-  onEndDateChange
+  onEndDateChange,
+  isEditing = false, // デフォルトは新規作成モード
+  onAdditionalQuantityChange
 }) => {
   // 基本の送信数を計算（期間内の営業日 × 500通）
   const baseQuantity = startDate && endDate ? calculateTotalQuantity(startDate, endDate, deliveryDays, 0) : 0;
@@ -26,6 +30,26 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
   const totalQuantity = baseQuantity + additionalQuantity;
   // 期間内の配信日数
   const deliveryDaysCount = startDate && endDate ? calculateDeliveryDaysInPeriod(startDate, endDate, deliveryDays) : 0;
+
+  // 10日を超える期間が選択された場合、追加送信数を自動計算
+  useEffect(() => {
+    if (startDate && endDate && onAdditionalQuantityChange) {
+      const deliveryDaysCount = calculateDeliveryDaysInPeriod(startDate, endDate, deliveryDays);
+      
+      if (deliveryDaysCount > 10) {
+        // 10日を超える分の日数
+        const extraDays = deliveryDaysCount - 10;
+        // 追加送信数を計算（1日あたり500通）
+        const additionalSendCount = extraDays * DAILY_LIMIT;
+        
+        // 追加送信数を更新
+        onAdditionalQuantityChange(additionalSendCount);
+      } else if (additionalQuantity > 0 && deliveryDaysCount <= 10) {
+        // 10日以内に戻した場合は追加送信数をリセット
+        onAdditionalQuantityChange(0);
+      }
+    }
+  }, [startDate, endDate, deliveryDays, onAdditionalQuantityChange, additionalQuantity]);
 
   // 営業日を計算する関数
   const isBusinessDay = (date: Date, deliveryDays: DeliveryDays): boolean => {
@@ -54,8 +78,7 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
 
   // 必要な営業日数を計算する関数
   const calculateRequiredBusinessDays = (totalQuantity: number): number => {
-    const dailyLimit = 500;
-    return Math.ceil(totalQuantity / dailyLimit);
+    return Math.ceil(totalQuantity / DAILY_LIMIT);
   };
 
   // 開始日が変更されたときのハンドラー
@@ -74,17 +97,21 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
   // 終了日が変更されたときのハンドラー
   const handleEndDateChange = (newEndDate: string) => {
     if (startDate && newEndDate) {
+      // 新しい期間の配信日数を計算
       const newDeliveryDaysCount = calculateDeliveryDaysInPeriod(startDate, newEndDate, deliveryDays);
-      const requiredDays = calculateRequiredBusinessDays(totalQuantity);
       
-      if (newDeliveryDaysCount < requiredDays) {
-        // 必要な日数を満たすように終了日を延長
-        const startDateObj = new Date(startDate);
-        const endDateObj = getDateAfterBusinessDays(startDateObj, requiredDays, deliveryDays);
-        onEndDateChange(endDateObj.toISOString().split('T')[0]);
-      } else {
-        onEndDateChange(newEndDate);
+      // 10日を超える場合は追加送信数を計算
+      if (newDeliveryDaysCount > 10 && onAdditionalQuantityChange) {
+        const extraDays = newDeliveryDaysCount - 10;
+        const newAdditionalQuantity = extraDays * DAILY_LIMIT;
+        onAdditionalQuantityChange(newAdditionalQuantity);
+      } else if (newDeliveryDaysCount <= 10 && additionalQuantity > 0 && onAdditionalQuantityChange) {
+        // 10日以内に戻した場合は追加送信数をリセット
+        onAdditionalQuantityChange(0);
       }
+      
+      // 終了日を更新
+      onEndDateChange(newEndDate);
     } else {
       onEndDateChange(newEndDate);
     }
@@ -108,14 +135,15 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
       .join('・');
   };
 
-  // 最小終了日を計算
-  const calculateMinEndDate = (): string => {
-    if (!startDate) return '';
-    
-    const startDateObj = new Date(startDate);
-    const requiredDays = calculateRequiredBusinessDays(totalQuantity);
-    const minEndDateObj = getDateAfterBusinessDays(startDateObj, requiredDays, deliveryDays);
-    return minEndDateObj.toISOString().split('T')[0];
+  // 残送信可能数の計算
+  const calculateRemainingQuantity = () => {
+    if (baseQuantity >= 5000) {
+      // 基本送信数が5000通以上の場合、追加送信は無制限
+      return '無制限';
+    } else {
+      // 基本送信数が5000通未満の場合、追加送信は不可
+      return '0';
+    }
   };
 
   return (
@@ -131,15 +159,31 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Calendar className="h-5 w-5 text-gray-400" />
               </div>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => handleStartDateChange(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                required
-              />
+              {isEditing ? (
+                // 編集モードの場合は送信開始日を編集不可に設定
+                <input
+                  type="date"
+                  value={startDate}
+                  disabled={true}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed text-gray-700"
+                  required
+                />
+              ) : (
+                // 新規作成モードの場合は送信開始日を編集可能に設定
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  required
+                />
+              )}
             </div>
+            {isEditing && startDate && (
+              <p className="mt-1 text-xs text-gray-500">
+                送信開始日は変更できません
+              </p>
+            )}
           </div>
           <div className="w-64">
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -153,7 +197,6 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
                 type="date"
                 value={endDate}
                 onChange={(e) => handleEndDateChange(e.target.value)}
-                min={calculateMinEndDate()}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 required
               />
@@ -171,6 +214,11 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
                 <p className="text-xs text-blue-600 mt-1">
                   配信日: {getDeliveryDayNames()}曜日
                 </p>
+                {deliveryDaysCount > 10 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    10日を超える期間が選択されました。11日目以降は追加送信として計算されます。
+                  </p>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-sm font-medium text-blue-700">
@@ -181,6 +229,11 @@ const DeliveryPeriodSection: React.FC<DeliveryPeriodSectionProps> = ({
                     </span>
                   )}
                 </p>
+                {baseQuantity < 5000 && additionalQuantity > 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    残送信可能数: {calculateRemainingQuantity()}通
+                  </p>
+                )}
               </div>
             </div>
           </div>

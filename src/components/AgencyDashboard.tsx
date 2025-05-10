@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from './DashboardLayout';
-import ProjectList from './ProjectList';
-import ActivityLog from './ActivityLog';
 import CustomerManagement from './CustomerManagement';
 import CampaignForm from './campaign/CampaignForm';
-import { Building2, Users, CreditCard, Calendar } from 'lucide-react';
-import { supabase, getRecentActivities, type Activity } from '../lib/supabase';
+import { supabase, getRecentActivities, type Activity, executeWithRetry } from '../lib/supabase';
+
+// 新しく作成したコンポーネントをインポート
+import DateRangeSelector from './dashboard/DateRangeSelector';
+import TabNavigation from './dashboard/TabNavigation';
+import DashboardContent from './dashboard/DashboardContent';
+import ErrorDisplay from './dashboard/ErrorDisplay';
 
 const AgencyDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -26,189 +29,201 @@ const AgencyDashboard: React.FC = () => {
     endDate: new Date().toISOString().split('T')[0]
   });
   const [projectListKey, setProjectListKey] = useState(0);
+  const [campaignCount, setCampaignCount] = useState<number | null>(null);
+  const [isStatsLoading, setIsStatsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          navigate('/');
-          return;
-        }
+  // データ取得を最適化
+  const fetchDashboardData = useCallback(async (userId: string) => {
+    if (!navigator.onLine) {
+      setError('インターネット接続がありません。接続を確認してください。');
+      return;
+    }
 
-        // 統計情報の取得
-        const [
-          { count: customersCount }, 
-          { data: activeCampaigns }, 
-          { data: campaigns },
-          activitiesData
-        ] = await Promise.all([
-          supabase.from('customers').select('*', { count: 'exact', head: true }).eq('agency_id', user.id),
+    try {
+      setIsStatsLoading(true);
+      setError(null);
+      console.log('Fetching dashboard data for user:', userId);
+      
+      // 並列でデータを取得
+      const [
+        customersResult,
+        activeCampaignsResult,
+        campaignsResult,
+        totalCampaignsResult
+      ] = await Promise.all([
+        executeWithRetry(() =>
+          supabase.from('customers')
+            .select('*', { count: 'exact' })
+            .eq('agency_id', userId)
+        ),
+        executeWithRetry(() =>
           supabase.from('campaigns')
             .select('*')
-            .eq('agency_id', user.id)
+            .eq('agency_id', userId)
             .eq('status', 'in_progress')
             .gte('created_at', dateRange.startDate)
-            .lte('created_at', dateRange.endDate),
+            .lte('created_at', dateRange.endDate)
+        ),
+        executeWithRetry(() =>
           supabase.from('campaigns')
             .select('total_amount')
-            .eq('agency_id', user.id)
+            .eq('agency_id', userId)
             .gte('created_at', dateRange.startDate)
-            .lte('created_at', dateRange.endDate),
-          getRecentActivities(user.id)
-        ]);
+            .lte('created_at', dateRange.endDate)
+        ),
+        executeWithRetry(() =>
+          supabase.from('campaigns')
+            .select('*', { count: 'exact' })
+            .eq('agency_id', userId)
+        )
+      ]);
 
-        // 合計売上金額の計算
-        const totalRevenue = campaigns?.reduce((sum, campaign) => sum + (campaign.total_amount || 0), 0) || 0;
+      // エラーチェック
+      const errors = [
+        { name: 'customers', error: customersResult.error },
+        { name: 'activeCampaigns', error: activeCampaignsResult.error },
+        { name: 'campaigns', error: campaignsResult.error },
+        { name: 'totalCampaigns', error: totalCampaignsResult.error }
+      ].filter(e => e.error);
 
-        setStats({
-          totalCustomers: customersCount || 0,
-          activeCampaigns: activeCampaigns?.length || 0,
-          totalRevenue: totalRevenue
-        });
+      if (errors.length > 0) {
+        const errorMessages = errors.map(e => `${e.name}: ${e.error.message}`).join(', ');
+        throw new Error(`データ取得エラー: ${errorMessages}`);
+      }
 
+      // データを設定
+      setStats({
+        totalCustomers: customersResult.count || 0,
+        activeCampaigns: activeCampaignsResult.data?.length || 0,
+        totalRevenue: campaignsResult.data?.reduce((sum, campaign) => sum + (campaign.total_amount || 0), 0) || 0
+      });
+
+      setCampaignCount(totalCampaignsResult.count || 0);
+      
+      // アクティビティを取得
+      try {
+        const activitiesData = await executeWithRetry(() => getRecentActivities(userId));
         setActivities(activitiesData);
+      } catch (activityError) {
+        console.error('Error fetching activities:', activityError);
+        // アクティビティの取得エラーは致命的ではないため、メインのエラーとしては扱わない
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError(err instanceof Error ? err.message : 'データの取得に失敗しました。');
+    } finally {
+      setIsStatsLoading(false);
+      setIsLoading(false);
+    }
+  }, [dateRange]);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const maxRetries = 3;
+        let retryCount = 0;
+        let lastError;
+
+        while (retryCount < maxRetries) {
+          try {
+            const { data: { user }, error: authError } = await supabase.auth.getUser();
+            
+            if (authError) throw authError;
+            if (!user) {
+              navigate('/');
+              return;
+            }
+
+            console.log('Current user:', user);
+
+            // 直接RPC関数を使用してロールを取得
+            const { data: role, error: roleError } = await supabase
+              .rpc('get_user_role', { user_id: user.id });
+
+            if (roleError) {
+              console.error('Error fetching user role:', roleError);
+              throw roleError;
+            }
+
+            console.log('User role:', role);
+            
+            // 代理店ロールでない場合はリダイレクト
+            if (role !== 'agency') {
+              console.log('User is not an agency, redirecting to home');
+              navigate('/');
+              return;
+            }
+
+            await fetchDashboardData(user.id);
+            return; // Success, exit the retry loop
+          } catch (error) {
+            lastError = error;
+            retryCount++;
+            console.error(`Auth check attempt ${retryCount} failed:`, error);
+            
+            if (retryCount < maxRetries) {
+              // Exponential backoff
+              const delay = Math.pow(2, retryCount) * 1000;
+              console.log(`Retrying in ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
+          }
+        }
+
+        // If we get here, all retries failed
+        console.error('Auth check failed after retries:', lastError);
+        setError('認証に失敗しました。ページを再読み込みしてください。');
+        navigate('/');
       } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('データの取得に失敗しました。');
-      } finally {
-        setIsLoading(false);
+        console.error('Auth check error:', err);
+        navigate('/');
       }
     };
 
-    fetchData();
-  }, [navigate, dateRange]);
+    checkAuth();
+  }, [navigate, fetchDashboardData]);
 
-  const handleNewProject = () => {
+  const handleNewProject = useCallback(() => {
     setSelectedCustomerId(null);
     setShowCampaignForm(true);
-  };
+  }, []);
 
-  const handleCampaignSave = () => {
+  const handleCampaignSave = useCallback(() => {
     setShowCampaignForm(false);
     setProjectListKey(prev => prev + 1);
-  };
-
-  const statItems = [
-    { name: '合計売上金額', value: `${stats.totalRevenue.toLocaleString()}円`, icon: CreditCard },
-    { name: '進行中の案件', value: String(stats.activeCampaigns), icon: Building2 },
-    { name: '登録顧客数', value: String(stats.totalCustomers), icon: Users }
-  ];
-
-  if (isLoading) {
-    return (
-      <DashboardLayout userType="agency">
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-        </div>
-      </DashboardLayout>
-    );
-  }
+  }, []);
 
   return (
     <DashboardLayout userType="agency">
       <div className="space-y-6">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
-            {error}
-          </div>
-        )}
+        <ErrorDisplay error={error} />
 
-        {/* タブナビゲーション */}
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`
-                py-4 px-1 border-b-2 font-medium text-sm
-                ${activeTab === 'dashboard'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
-              `}
-            >
-              ダッシュボード
-            </button>
-            <button
-              onClick={() => setActiveTab('customers')}
-              className={`
-                py-4 px-1 border-b-2 font-medium text-sm
-                ${activeTab === 'customers'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
-              `}
-            >
-              顧客管理
-            </button>
-          </nav>
+        {/* タブナビゲーションと日付選択を同じ行に配置 */}
+        <div className="border-b border-gray-200 flex justify-between items-center">
+          <TabNavigation 
+            activeTab={activeTab} 
+            onTabChange={(tab) => setActiveTab(tab)} 
+          />
+          
+          {/* 日付範囲選択 - 右端に配置 */}
+          <DateRangeSelector 
+            startDate={dateRange.startDate}
+            endDate={dateRange.endDate}
+            onStartDateChange={(date) => setDateRange(prev => ({ ...prev, startDate: date }))}
+            onEndDateChange={(date) => setDateRange(prev => ({ ...prev, endDate: date }))}
+          />
         </div>
 
         {activeTab === 'dashboard' ? (
-          <>
-            {/* 日付範囲選択 */}
-            <div className="flex justify-end items-center space-x-4">
-              <Calendar className="h-5 w-5 text-gray-400" />
-              <div className="flex items-center space-x-2">
-                <input
-                  type="date"
-                  value={dateRange.startDate}
-                  onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                />
-                <span className="text-gray-500">〜</span>
-                <input
-                  type="date"
-                  value={dateRange.endDate}
-                  onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {statItems.map((stat) => {
-                const Icon = stat.icon;
-                return (
-                  <div
-                    key={stat.name}
-                    className="bg-white overflow-hidden shadow rounded-lg"
-                  >
-                    <div className="p-5">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0">
-                          <Icon className="h-6 w-6 text-gray-400" aria-hidden="true" />
-                        </div>
-                        <div className="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt className="text-sm font-medium text-gray-500 truncate">
-                              {stat.name}
-                            </dt>
-                            <dd className="flex items-baseline">
-                              <div className="text-2xl font-semibold text-gray-900">
-                                {stat.value}
-                              </div>
-                            </dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <ProjectList 
-                  key={projectListKey}
-                  userType="agency" 
-                  onNewProject={handleNewProject}
-                />
-              </div>
-              <div>
-                <ActivityLog activities={activities} />
-              </div>
-            </div>
-          </>
+          <DashboardContent 
+            stats={stats}
+            activities={activities}
+            isStatsLoading={isStatsLoading}
+            campaignCount={campaignCount}
+            projectListKey={projectListKey}
+            onNewProject={handleNewProject}
+            onCampaignSave={handleCampaignSave}
+          />
         ) : (
           <CustomerManagement />
         )}
